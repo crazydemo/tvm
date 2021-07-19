@@ -241,3 +241,7 @@ conda/pkg
 .tvm_test_data
 .dgl
 .caffe2
+
+# logs
+*.txt
+*.xlsx
