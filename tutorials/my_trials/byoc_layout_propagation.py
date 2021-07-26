@@ -3,6 +3,8 @@ import time
 import mxnet as mx
 import warnings
 
+from tvm.relay.build_module import GraphExecutor
+
 # from torch._C import T
 warnings.filterwarnings("ignore")
 from mxnet.gluon.model_zoo.vision import *
@@ -57,12 +59,6 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
         new_attrs["data_layout"] = "NCHW16c"
         new_attrs["kernel_layout"] = "OIHW16i"
         return relay.nn.conv2d(data, weight, **new_attrs)
-# def alter_conv2d(attrs, inputs, tinfos, out_type):
-#         data, weight = inputs
-#         new_attrs = dict(attrs)
-#         new_attrs["data_layout"] = "NCHW16c"
-#         new_attrs["kernel_layout"] = "OIHW16i"
-#         return relay.nn.conv2d(data, weight, **new_attrs)
 
 def run_opt_pass(mod, passes, params):
     passes = passes if isinstance(passes, list) else [passes]
@@ -102,86 +98,33 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     
     model = Model()
     model.initialize(ctx=ctx)
-    # model.hybridize()
     model(sample)
-    
-    # net = model_dict[model_name](pretrained=True)
-    # net.hybridize(static_alloc=True, static_shape=True)
-    mod, params = relay.frontend.from_mxnet(model, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
-    # mod, params = resnet.get_workload(batch_size=batch_size, dtype="float32")
-    print(mod)
 
+    mod, params = relay.frontend.from_mxnet(model, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
+    # print(mod)
+# 
     seq = tvm.transform.Sequential(
         [
-            # transform.InferType(),
-            transform.RemoveUnusedFunctions(),
-            relay.transform.AlterOpLayout(),
-            # transform.ConvertLayout(
-            #     {
-            #         "nn.conv2d": ["NCHW", "OIHW"],
-            #     #     "nn.conv3d": ["NCDHW", "default"],
-            #     #     "nn.conv2d_transpose": ["NCHW", "default"],
-            #     }
-            # ),
-            # transform.FoldConstant(),
+            transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
-            transform.PartitionGraph(),
-            # transform.InferType(),
+            transform.PartitionGraph()
         ]
     )
 
-    with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):#
-        with tvm.target.Target("llvm"):
-            mod = seq(mod)
-    
-    with relay.build_config(opt_level=3):
-        graph, lib, params = relay.build(mod, target, params=params)
+    with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):#compile the graph
+        graph, lib, param = tvm.relay.build(seq(mod), target="llvm", params=params)
+    lib = update_lib(lib)
+    rt_mod = tvm.contrib.graph_executor.create(graph, lib, tvm.cpu())#Create a runtime executor module given a graph and module.
 
-    return mod
-    # # 
-    #     # a = run_opt_pass(mod, transform.AlterOpLayout())
-    # # seq = tvm.transform.Sequential(transform.InferType(), transform.AlterOpLayout())
-    # # with tvm.transform.PassContext(opt_level=3):
-    
-    # # with TempOpAttr("nn.conv2d", "FTVMAlterOpLayout", alter_conv2d):
-    # #     mod = run_opt_pass(mod, [transform.AlterOpLayout()])#transform.CanonicalizeOps(), 
-    # #     print("===================run opt pass=========================")
-    # #     print(mod)
-
-    # print('==================1 relayed model ==================')
-    # print(mod["main"].astext(show_meta_data=False))
-    # mod2 = relay.transform.MergeComposite(pattern_table())(mod)
-    # print('==================2 MergeComposite ==================')
-    # print(mod2["main"].astext(show_meta_data=False))
-    # mod3 = relay.transform.AnnotateTarget(["dnnl"])(mod2)
-    # print('==================3 AnnotateTarget ==================')
-    # print(mod3["main"].astext(show_meta_data=False))
-    # mod4 = relay.transform.MergeCompilerRegions()(mod3)
-    # print('==================4 MergeCompilerRegions ==================')
-    # print(mod4["main"].astext(show_meta_data=False))
-    # mod5 = relay.transform.PartitionGraph()(mod4)
-    # print('==================5 PartitionGraph ==================')
-    # print(mod5["main"].astext(show_meta_data=False))
-
-    # with TempOpAttr("nn.conv2d", "FTVMAlterOpLayout", alter_conv2d):
-    #     json, lib, param = run_opt_pass(mod, [transform.CanonicalizeOps(), transform.AlterOpLayout()], params)#
-    #     # print("===================run opt pass=========================")
-    #     # print(mod)
-    #     # with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):#compile the graph
-
-    #     # json, lib, param = tvm.relay.build(mod5, target="llvm", params=params)
-    # lib = update_lib(lib)
-    # rt_mod = tvm.contrib.graph_executor.create(json, lib, tvm.cpu())#Create a runtime executor module given a graph and module.
-
-    # data = np.random.uniform(size=input_shape)
-    # # rt_mod.set_input("data", sample)
-    # rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
-    # for i in range(batches+warmup):
-    #     if i == warmup:
-    #         tic = time.time()
-    #     out = rt_mod.run()
-    # with_fuse_ms = (time.time() - tic) / (batches) * 1000
-    # print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
+    data = np.random.uniform(size=input_shape)
+    # rt_mod.set_input("data", sample)
+    rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
+    for i in range(batches+warmup):
+        if i == warmup:
+            tic = time.time()
+        out = rt_mod.run()
+    with_fuse_ms = (time.time() - tic) / (batches) * 1000
+    print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
 
 benchmark(batch_size=1) 
