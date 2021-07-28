@@ -4,6 +4,7 @@ import mxnet as mx
 import warnings
 
 from tvm.relay.build_module import GraphExecutor
+from tvm.relay.transform.transform import AlterOpLayout
 
 # from torch._C import T
 warnings.filterwarnings("ignore")
@@ -76,9 +77,9 @@ class Model(HybridBlock):
         # use name_scope to give child Blocks appropriate names.
         # with self.name_scope():
         self.conv0 = nn.Conv2D(256, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
-        self.conv1 = nn.Conv2D(512, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        self.conv2 = nn.Conv2D(512, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        self.conv3 = nn.Conv2D(512, 3, use_bias=False)
+        self.conv1 = nn.Conv2D(256, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        self.conv2 = nn.Conv2D(256, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        self.conv3 = nn.Conv2D(256, 3, use_bias=False)
         self.relu = nn.Activation('relu')
 
     def hybrid_forward(self, F, x):
@@ -88,13 +89,13 @@ class Model(HybridBlock):
         x3 = self.relu(self.conv3(x))
         return x1+x2+x3
 
-def benchmark(batch_size=1, batches=10, warmup=2):
+def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
     mx.random.seed(0)
-    sample = mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,3,224,224))
+    sample = mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,224,224))
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = mx.cpu()
 
-    input_shape = (batch_size, 3, 224, 224)
+    input_shape = (batch_size, cin, 224, 224)
     
     model = Model()
     model.initialize(ctx=ctx)
@@ -105,26 +106,35 @@ def benchmark(batch_size=1, batches=10, warmup=2):
 # 
     seq = tvm.transform.Sequential(
         [
+            transform.ConvertLayout(
+                {
+                    "nn.conv2d": ["NCHW16c", "OIHW16o16i"],
+                    "nn.conv3d": ["NCDHW", "default"],
+                    "nn.conv2d_transpose": ["NCHW", "default"],
+                }
+            ),
+            # transform.AlterOpLayout(),
             transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
-            transform.PartitionGraph()
+            transform.PartitionGraph(),
+            
         ]
     )
 
-    with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):#compile the graph
+    with tvm.transform.PassContext(opt_level=3):#compile the graph , instruments=[PrintIR()]
         graph, lib, param = tvm.relay.build(seq(mod), target="llvm", params=params)
-    lib = update_lib(lib)
+    # lib = update_lib(lib)
     rt_mod = tvm.contrib.graph_executor.create(graph, lib, tvm.cpu())#Create a runtime executor module given a graph and module.
 
-    data = np.random.uniform(size=input_shape)
-    # rt_mod.set_input("data", sample)
-    rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
-    for i in range(batches+warmup):
-        if i == warmup:
-            tic = time.time()
-        out = rt_mod.run()
-    with_fuse_ms = (time.time() - tic) / (batches) * 1000
-    print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
+    # data = np.random.uniform(size=input_shape)
+    # # rt_mod.set_input("data", sample)
+    # rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
+    # for i in range(batches+warmup):
+    #     if i == warmup:
+    #         tic = time.time()
+    #     out = rt_mod.run()
+    # with_fuse_ms = (time.time() - tic) / (batches) * 1000
+    # print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
 
 benchmark(batch_size=1) 

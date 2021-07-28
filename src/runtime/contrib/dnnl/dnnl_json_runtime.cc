@@ -189,10 +189,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dims padding_dims_r = {PH_R, PW_R};
 
     // Memory descriptions.
-    auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, tag::any);
-    auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, tag::any);
+    auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, tag::nChw16c);
+    auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, tag::OIhw16i16o);
     auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
-    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::nchw);
+    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::nChw16c);
 
     // Covn2d description.
     auto conv_desc = dnnl::convolution_forward::desc(
@@ -214,13 +214,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_.push_back(conv);
 
     // Data memory.
-    ICHECK_EQ(node.GetAttr<std::vector<std::string>>("data_layout")[0], "NCHW");
-    auto conv2d_src_memory = BindDNNLMemory(data_entry, {src_dims, dt::f32, tag::nchw});
+    // ICHECK_EQ(node.GetAttr<std::vector<std::string>>("data_layout")[0], "NCHW");
+    auto conv2d_src_memory = BindDNNLMemory(data_entry, {src_dims, dt::f32, tag::nChw16c});
 
     // Weight memory.
-    ICHECK_EQ(node.GetAttr<std::vector<std::string>>("kernel_layout")[0], "OIHW");
+    // ICHECK_EQ(node.GetAttr<std::vector<std::string>>("kernel_layout")[0], "OIHW");
     auto conv2d_weights_memory = BindDNNLMemory(
-        weight_entry, {weights_dims, dt::f32, (groups > 1) ? tag::goihw : tag::oihw});
+        weight_entry, {weights_dims, dt::f32, (groups > 1) ? tag::goihw : tag::OIhw16i16o});
 
     // Bias memory.
     auto conv2d_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
