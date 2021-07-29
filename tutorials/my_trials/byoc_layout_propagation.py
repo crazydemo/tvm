@@ -80,10 +80,10 @@ class Model(HybridBlock):
         # self.conv1 = nn.Conv2D(256, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
         # self.conv2 = nn.Conv2D(256, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
         # self.conv3 = nn.Conv2D(256, 3, use_bias=True)
-        # self.relu = nn.Activation('relu')
+        self.relu = nn.Activation('relu')
 
     def hybrid_forward(self, F, x):
-        x = self.conv0(x)#self.relu(
+        x = self.relu(self.conv0(x))
         # x1 = self.relu(self.conv1(x))
         # x2 = self.relu(self.conv2(x))
         # x3 = self.relu(self.conv3(x))
@@ -134,19 +134,11 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
     data = r.uniform(size=input_shape)
 
     rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
-    # execute
-    rt_mod.run()
-    # get outputs
-    tvm_output = rt_mod.get_output(0)
-    # rt_mod.set_input("data", sample)
-    # rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
-    # for i in range(batches+warmup):
-    #     if i == warmup:
-    #         tic = time.time()
-    #     out = rt_mod.run()
-    # tvm_output = out.get_output(0)
-    print(tvm_output)
-    # with_fuse_ms = (time.time() - tic) / (batches) * 1000
-    # print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
+    for i in range(batches+warmup):
+        if i == warmup:
+            tic = time.time()
+        out = rt_mod.run()
+    with_fuse_ms = (time.time() - tic) / (batches) * 1000
+    print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
 
 benchmark(batch_size=1)

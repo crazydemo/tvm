@@ -196,7 +196,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // else
     // {
       dnnl::memory::dim N = input_shape[0],       // batch size
-        IC = input_shape[1]*input_shape[3],                    // input channels
+        IC = input_shape[1]*input_shape[4],                    // input channels
         IH = input_shape[2],                    // input height
         IW = input_shape[2],                    // input width
         OC = weight_shape[0]*weight_shape[4],                   // output channels
@@ -212,7 +212,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         OW = (IW - KW + PW_L + PW_R) / SW + 1;  // output width
     // }
 // 
-    std::cout<<input_shape.size()<<' '<<std::endl;
+    std::cout<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
+    // std::cout<<input_shape.size()<<' '<<std::endl;
     for (auto in: input_shape)
     {
       std::cout<<in<<' ';
@@ -220,7 +221,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     std::cout<<std::endl;
 
-    std::cout<<weight_shape.size()<<' '<<std::endl;
+    // std::cout<<weight_shape.size()<<' '<<std::endl;
 
     for (auto in: weight_shape)
     {
@@ -289,7 +290,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     JSONGraphNodeEntry out_entry(nid, 0);
     auto conv2d_dst_memory = BindDNNLMemory(out_entry, conv2d_prim_desc.dst_desc());
 
-    std::cout<<conv2d_dst_memory.get_data_handle()<<std::endl;
+    // std::cout<<conv2d_dst_memory.get_data_handle()<<std::endl;
     // Bind memory buffers.
     net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
                          {DNNL_ARG_WEIGHTS, conv2d_weights_memory},
