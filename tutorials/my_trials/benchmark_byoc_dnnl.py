@@ -142,15 +142,16 @@ def benchmark(batch_size=1, batches=10, warmup=2):
             [
                 # transform.InferType(),
                 relay.transform.RemoveUnusedFunctions(),
-                relay.transform.AlterOpLayout(),
-                # transform.ConvertLayout(
-                #     {
-                #         "nn.conv2d": ["NCHW", "OIHW"],
-                #     #     "nn.conv3d": ["NCDHW", "default"],
-                #     #     "nn.conv2d_transpose": ["NCHW", "default"],
-                #     }
-                # ),
-                # transform.FoldConstant(),
+                # relay.transform.AlterOpLayout(),
+                relay.transform.ConvertLayout(
+                    {
+                        "nn.conv2d": ["NCHW8c", "OIHW8o8i"],
+                    #     "nn.conv3d": ["NCDHW", "default"],
+                    #     "nn.conv2d_transpose": ["NCHW", "default"],
+                    }
+                ),
+                relay.transform.FoldConstant(),
+                relay.transform.MergeComposite(pattern_table()),
                 relay.transform.AnnotateTarget("dnnl"),
                 relay.transform.MergeCompilerRegions(),
                 relay.transform.PartitionGraph(),
@@ -158,7 +159,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
             ]
         )
 
-        with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):#
+        with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):# 
             with tvm.target.Target("llvm"):
                 mod = seq(mod)
 

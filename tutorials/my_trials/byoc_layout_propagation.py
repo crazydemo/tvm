@@ -77,17 +77,17 @@ class Model(HybridBlock):
         # use name_scope to give child Blocks appropriate names.
         # with self.name_scope():
         self.conv0 = nn.Conv2D(256, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
-        self.conv1 = nn.Conv2D(256, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        self.conv2 = nn.Conv2D(256, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        self.conv3 = nn.Conv2D(256, 3, use_bias=False)
-        self.relu = nn.Activation('relu')
+        # self.conv1 = nn.Conv2D(256, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        # self.conv2 = nn.Conv2D(256, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        # self.conv3 = nn.Conv2D(256, 3, use_bias=True)
+        # self.relu = nn.Activation('relu')
 
     def hybrid_forward(self, F, x):
-        x = self.relu(self.conv0(x))
-        x1 = self.relu(self.conv1(x))
-        x2 = self.relu(self.conv2(x))
-        x3 = self.relu(self.conv3(x))
-        return x1+x2+x3
+        x = self.conv0(x)#self.relu(
+        # x1 = self.relu(self.conv1(x))
+        # x2 = self.relu(self.conv2(x))
+        # x3 = self.relu(self.conv3(x))
+        return x
 
 def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
     mx.random.seed(0)
@@ -98,6 +98,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
     input_shape = (batch_size, cin, 224, 224)
     
     model = Model()
+    mx.random.seed(0)
     model.initialize(ctx=ctx)
     model(sample)
 
@@ -108,7 +109,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
         [
             transform.ConvertLayout(
                 {
-                    "nn.conv2d": ["NCHW16c", "OIHW16o16i"],
+                    "nn.conv2d": ["NCHW8c", "OIHW8o8i"],
                     "nn.conv3d": ["NCDHW", "default"],
                     "nn.conv2d_transpose": ["NCHW", "default"],
                 }
@@ -122,19 +123,30 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
         ]
     )
 
-    with tvm.transform.PassContext(opt_level=3):#compile the graph , instruments=[PrintIR()]
+    # print(seq(mod))
+    with tvm.transform.PassContext(opt_level=3):#compile the graph , instruments=[PrintIR()], instruments=[PrintIR()]
         graph, lib, param = tvm.relay.build(seq(mod), target="llvm", params=params)
     # lib = update_lib(lib)
     rt_mod = tvm.contrib.graph_executor.create(graph, lib, tvm.cpu())#Create a runtime executor module given a graph and module.
 
-    # data = np.random.uniform(size=input_shape)
-    # # rt_mod.set_input("data", sample)
+    from numpy.random import RandomState
+    r = RandomState(42)
+    data = r.uniform(size=input_shape)
+
+    rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
+    # execute
+    rt_mod.run()
+    # get outputs
+    tvm_output = rt_mod.get_output(0)
+    # rt_mod.set_input("data", sample)
     # rt_mod.set_input("data", tvm.nd.array(data.astype("float32")))
     # for i in range(batches+warmup):
     #     if i == warmup:
     #         tic = time.time()
     #     out = rt_mod.run()
+    # tvm_output = out.get_output(0)
+    print(tvm_output)
     # with_fuse_ms = (time.time() - tic) / (batches) * 1000
     # print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
 
-benchmark(batch_size=1) 
+benchmark(batch_size=1)
