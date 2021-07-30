@@ -61,7 +61,6 @@ def _register_external_op_helper(op_name, supported=True):
 
 _register_external_op_helper("nn.batch_norm")
 _register_external_op_helper("nn.conv2d")
-# _register_external_op_helper("nn.bias_add")
 _register_external_op_helper("nn.dense")
 _register_external_op_helper("nn.relu")
 _register_external_op_helper("add")
@@ -69,7 +68,7 @@ _register_external_op_helper("subtract")
 _register_external_op_helper("multiply")
 
 
-def make_pattern(with_bias=True):
+def make_pattern(with_bias=True, with_relu=True):
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
@@ -78,12 +77,15 @@ def make_pattern(with_bias=True):
         conv_out = is_op("add")(conv, bias)
     else:
         conv_out = conv
-    return is_op("nn.relu")(conv_out)
+    if with_relu:
+        return is_op("nn.relu")(conv_out)
+    return conv_out
 
 
 @register_pattern_table("dnnl")
 def pattern_table():
     conv2d_bias_relu_pat = ("dnnl.conv2d_bias_relu", make_pattern(with_bias=True))
     conv2d_relu_pat = ("dnnl.conv2d_relu", make_pattern(with_bias=False))
-    dnnl_patterns = [conv2d_bias_relu_pat, conv2d_relu_pat]
+    conv2d_bias_pat = ("dnnl.conv2d_bias", make_pattern(with_bias=True, with_relu=False))
+    dnnl_patterns = [conv2d_bias_relu_pat, conv2d_relu_pat, conv2d_bias_pat]
     return dnnl_patterns
