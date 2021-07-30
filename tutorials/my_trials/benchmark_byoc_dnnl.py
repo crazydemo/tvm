@@ -30,38 +30,6 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
-def make_pattern(with_bias=True, with_bn=False):
-    from tvm.relay.dataflow_pattern import is_op, wildcard
-    data = wildcard()
-    weight = wildcard()
-    bias = wildcard()
-    gamma, beta, moving_mean, moving_var = wildcard(), wildcard(), wildcard(), wildcard()
-    conv = is_op("nn.conv2d")(data, weight)
-    if with_bias:
-        conv_out = is_op("nn.bias_add")(conv, bias)
-    else:
-        conv_out = conv
-    if with_bn:
-        bn_out = is_op("nn.batch_norm")(conv_out, gamma, beta, moving_mean, moving_var)
-    else:
-        bn_out = conv_out
-    return is_op("nn.relu")(bn_out)
-
-# def make_pattern(with_bias=True):
-#     from tvm.relay.dataflow_pattern import is_op, wildcard
-#     data = wildcard()
-#     weight = wildcard()
-#     conv = is_op('nn.conv2d')(data, weight)
-#     return wildcard()(conv)
-
-# conv2d_bias_relu_pat = ("dnnl.conv2d_relu_with_bias", make_pattern(with_bias=True))
-# conv2d_bias_bn_relu_pat = ("dnnl.conv2d_bn_relu_with_bias", make_pattern(with_bias=True, with_bn=True))
-# conv2d_relu_pat = ("dnnl.conv2d_relu_wo_bias", make_pattern(with_bias=False))
-# conv2d_bn_relu_pat = ("dnnl.conv2d_bn_relu_wo_bias", make_pattern(with_bias=False, with_bn=True))
-# patterns = [conv2d_bias_relu_pat, conv2d_relu_pat, conv2d_bias_bn_relu_pat, conv2d_bn_relu_pat]#
-
-
-
 def update_lib(lib):
     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
     test_dir = os.path.dirname(os.path.realpath(os.path.expanduser(__file__)))
@@ -97,6 +65,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         # net.hybridize(static_alloc=True, static_shape=True)
         # mod, params = relay.frontend.from_mxnet(net, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
         mod, params = model_dict[model_name].get_workload(batch_size=batch_size, dtype="float32")
+        # print(mod)
         # mod =relay.transform.AlterOpLayout()(mod)
         # print('==================1 relayed model ==================')
         # print(mod["main"].astext(show_meta_data=False))
@@ -137,19 +106,13 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     #         # relay.transform.FoldConstant(),
     #     ]
     # )
-
+        desired_layouts = {"nn.conv2d": ["NCHW8c", "OIHW8o8i"], "nn.batch_norm": ["NCHW8c", "OIHW8o8i"]}
         seq = tvm.transform.Sequential(
             [
                 # transform.InferType(),
                 relay.transform.RemoveUnusedFunctions(),
                 # relay.transform.AlterOpLayout(),
-                relay.transform.ConvertLayout(
-                    {
-                        "nn.conv2d": ["NCHW8c", "OIHW8o8i"],
-                    #     "nn.conv3d": ["NCDHW", "default"],
-                    #     "nn.conv2d_transpose": ["NCHW", "default"],
-                    }
-                ),
+                relay.transform.ConvertLayout(desired_layouts),
                 relay.transform.FoldConstant(),
                 relay.transform.MergeComposite(pattern_table()),
                 relay.transform.AnnotateTarget("dnnl"),
@@ -159,14 +122,15 @@ def benchmark(batch_size=1, batches=10, warmup=2):
             ]
         )
 
-        with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):# 
-            with tvm.target.Target("llvm"):
-                mod = seq(mod)
+        with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
+            json, lib, params = relay.build(seq(mod), "llvm", params=params)
+            # with tvm.target.Target("llvm"):
+            #     mod = seq(mod)
 
         # with tvm.transform.PassContext(opt_level=3):#compile the graph , instruments=[PrintIR()]
         #     json, lib, param = tvm.relay.build(mod, target="llvm", params=params)
-        with relay.build_config(opt_level=3):
-            json, lib, params = relay.build(mod, "llvm", params=params)
+        # with relay.build_config(opt_level=3):
+        #     json, lib, params = relay.build(mod, "llvm", params=params)
         # lib = update_lib(lib)
         rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
 
