@@ -375,10 +375,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if(data_shape.size()>4)
     {IC = IC * data_shape[data_shape.size()-1];
     data_shape[1] = IC;
-    dnnl::memory::dims new_data_shape{1,2,3,4};
-    for(int i=0; i<data_shape.size()-1; i++)
-    {new_data_shape[i] = data_shape[i];}
-    data_shape = new_data_shape;
+    // dnnl::memory::dims new_data_shape{1,2,3,4};
+    // for(int i=0; i<data_shape.size()-1; i++)
+    // {new_data_shape[i] = data_shape[i];}
+    // data_shape = new_data_shape;
     }
 
     // std::cout<<IC<<std::endl;
@@ -427,14 +427,17 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_entry = node.GetInputs()[0];
     dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
 
-    std::cout<<"Relu "; 
-    for (auto i : shape)
-    {
-      std::cout<<i<<" ";
-    }
-    std::cout<<std::endl;
+    // std::cout<<"Relu "; 
+    // for (auto i : shape)
+    // {
+    //   std::cout<<i<<" ";
+    // }
+    // std::cout<<std::endl;
 
     auto data_md = dnnl::memory::desc{{shape}, dt::f32, tag::any};
+
+    // if(shape.size()>4)
+    // {data_md = dnnl::memory::desc{{shape}, dt::f32, tag::nChw16c};}
 
     auto relu_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_inference,
                                                  dnnl::algorithm::eltwise_relu, data_md, 0);

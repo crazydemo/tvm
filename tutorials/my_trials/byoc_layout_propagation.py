@@ -19,6 +19,7 @@ import os
 from tvm.contrib import utils
 from tvm.relay.testing.temp_op_attr import TempOpAttr
 from tvm.relay import transform, analysis
+from tvm.relay.build_module import bind_params_by_name
 
 import mxnet as mx
 from mxnet.gluon import HybridBlock, nn
@@ -41,21 +42,14 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     new_attrs['data_layout'] = 'NCHW'
     new_attrs['kernel_layout'] = 'OIHW16o'
     try:
-        if weight.type_annotation.shape[1]>=8:
+        # if weight.type_annotation.shape[1]>=16:
+        if weight.data.shape[1]>=16:
             new_attrs = dict(attrs)
             new_attrs['data_layout'] = 'NCHW16c'
             new_attrs['kernel_layout'] = 'OIHW16o16i'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
         return relay.nn.conv2d(data, weight, **new_attrs)
-    return relay.nn.conv2d(data, weight, **new_attrs)
-
-# @relay.op.register_alter_op_layout("nn.conv2d", level=101)
-# def alter_conv2d(attrs, inputs, tinfos, out_type):
-#     data, weight = inputs
-#     new_attrs = dict(attrs)
-#     new_attrs["data_layout"] = "NCHW16c"
-#     return relay.nn.conv2d(data, weight, **new_attrs)
 
 def update_lib(lib):
     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
@@ -84,38 +78,38 @@ class Model(HybridBlock):
         super(Model, self).__init__(**kwargs)
         # use name_scope to give child Blocks appropriate names.
         # with self.name_scope():
-        self.bn1 = nn.BatchNorm()
-        self.bn2 = nn.BatchNorm()
-        self.conv0 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
-        self.conv1 = nn.Conv2D(64, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        self.conv2 = nn.Conv2D(64, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        self.conv3 = nn.Conv2D(64, 3, use_bias=True)
-        self.relu = nn.Activation('relu')
+        # self.bn1 = nn.BatchNorm()
+        # self.bn2 = nn.BatchNorm()
+        self.conv0 = nn.Conv2D(16, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
+        # self.conv1 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        # self.conv2 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        # self.conv3 = nn.Conv2D(16, 3, use_bias=False)
+        # self.relu = nn.Activation('relu')
 
     def hybrid_forward(self, F, x):
-        x = self.bn1(x)
+        # x = self.bn1(x)
         x = self.conv0(x)
-        x1 = self.relu(self.conv1(x))
-        x2 = self.relu(self.conv2(x))
-        x3 = self.bn2(self.conv3(x))
-        return x1+x2+x3
+        # x1 = self.relu(self.conv1(x))
+        # x2 = self.relu(self.conv2(x))
+        # x3 = self.bn2(self.conv3(x))
+        return x#x1+x2+x3
 
 def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     
     mx.random.seed(0)
-    sample = np.ones((batch_size,cin,32, 32), np.float32)#mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,8,8))
+    sample = np.ones((batch_size,cin,8, 8), np.float32)#mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,8,8))
     sample_for_mxnet = mx.ndarray.array(sample)
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = mx.cpu()
     # print("input:{}".format(sample_for_mxnet))
 
-    input_shape = (batch_size, cin, 32, 32)
+    input_shape = (batch_size, cin, 8, 8)
     
     model = Model()
     mx.random.seed(0)
     model.initialize(ctx=ctx)
     output = model(sample_for_mxnet)
-    # print("mxnet output:{}".format(output))
+    print("mxnet output:{}".format(output))
 
 
     mod, params = relay.frontend.from_mxnet(model, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
@@ -124,8 +118,8 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     seq = tvm.transform.Sequential(
         [
             relay.transform.CanonicalizeOps(),
-            # relay.transform.SimplifyInference(),
-            # relay.transform.FoldScaleAxis(),
+            relay.transform.SimplifyInference(),
+            relay.transform.FoldScaleAxis(),
 
             transform.AlterOpLayout(),
             # transform.ConvertLayout(desired_layouts),
@@ -137,6 +131,8 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
         ]
     )
 
+    if params:
+        mod["main"] = bind_params_by_name(mod["main"], params)
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):#compile the graph x, instruments=[PrintIR()]
         graph, lib, param = tvm.relay.build(seq(mod), target="llvm", params=params)
     # lib = update_lib(lib)
@@ -147,7 +143,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     # print(tvm_output.shape)
-    # print("tvm output:{}".format(tvm_output))
+    print("tvm output:{}".format(tvm_output))
     # for i in range(batches+warmup):
     #     if i == warmup:
     #         tic = time.time()

@@ -17,6 +17,7 @@ import numpy as np
 from tvm.relay.testing import *
 import os
 from tvm.contrib import utils
+from tvm.relay.build_module import bind_params_by_name
 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
 model_dict = {'resnet50_v1': resnet}
@@ -41,8 +42,8 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     try:
         if weight.type_annotation.shape[1]>=8:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8o8i'
+            new_attrs['data_layout'] = 'NCHW16c'
+            new_attrs['kernel_layout'] = 'OIHW16o16i'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
         return relay.nn.conv2d(data, weight, **new_attrs)
@@ -79,57 +80,16 @@ def benchmark(batch_size=1, batches=10, warmup=2):
 
     input_shape = (batch_size, 3, 224, 224)
     for model_name in model_dict.keys():
-        # net = model_dict[model_name](pretrained=True)
-        # net.hybridize(static_alloc=True, static_shape=True)
-        # mod, params = relay.frontend.from_mxnet(net, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
         mod, params = model_dict[model_name].get_workload(batch_size=batch_size, dtype="float32")
-        # print(mod)
-        # mod =relay.transform.AlterOpLayout()(mod)
-        # print('==================1 relayed model ==================')
-        # print(mod["main"].astext(show_meta_data=False))
-        # mod2 = relay.transform.MergeComposite(pattern_table())(mod)
-        # # print('==================2 MergeComposite ==================')
-        # # print(mod2["main"].astext(show_meta_data=False))
-        # mod3 = relay.transform.AnnotateTarget(["dnnl"])(mod2)
-        # print('==================3 AnnotateTarget ==================')
-        # # print(mod3["main"].astext(show_meta_data=False))
-        # # print(mod3)
-
-        # mod4 = relay.transform.MergeCompilerRegions()(mod3)
-        # print('==================4 MergeCompilerRegions ==================')
-        # # print(mod4["main"].astext(show_meta_data=False))
-        # # print(mod4)
-
-        # mod5 = relay.transform.PartitionGraph()(mod4)
-        # print('==================5 PartitionGraph ==================')
-        # # print(mod5["main"].astext(show_meta_data=False))
-        # # print(mod5)
-
-        # mod6 =relay.transform.AlterOpLayout()(mod5)
-
-    #     seq = tvm.transform.Sequential(
-    #     [
-    #         # transform.InferType(),
-    #         relay.transform.MergeComposite(pattern_table()),
-    #         relay.transform.AnnotateTarget(["dnnl"]),
-    #         relay.transform.MergeCompilerRegions(),
-    #         relay.transform.PartitionGraph(),
-    #         relay.transform.RemoveUnusedFunctions(),
-    #         relay.transform.AlterOpLayout()
-    #         # relay.transform.ConvertLayout(
-    #         #     {
-    #         #         "nn.conv2d": ["NCHW", "OIHW"],
-    #         #     }
-    #         # ),
-    #         # relay.transform.FoldConstant(),
-    #     ]
-    # )
-        desired_layouts = {"nn.conv2d": ["NCHW8c", "OIHW8o8i"], "nn.batch_norm": ["NCHW8c", "OIHW8o8i"]}
+        desired_layouts = {"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#"nn.conv2d": ["NCHW8c", "OIHW8o8i"],
         seq = tvm.transform.Sequential(
             [
                 # transform.InferType(),
                 # relay.transform.RemoveUnusedFunctions(),
                 relay.transform.CanonicalizeOps(),
+                relay.transform.SimplifyInference(),
+                relay.transform.FoldScaleAxis(),
+
                 relay.transform.AlterOpLayout(),
                 # relay.transform.ConvertLayout(desired_layouts),
                 # relay.transform.FoldConstant(),
@@ -140,7 +100,9 @@ def benchmark(batch_size=1, batches=10, warmup=2):
                 # transform.InferType(),
             ]
         )
-        print(seq(mod))
+        # print(seq(mod))
+        if params:
+            mod["main"] = bind_params_by_name(mod["main"], params)
         with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
             # with tvm.target.Target("llvm"):
