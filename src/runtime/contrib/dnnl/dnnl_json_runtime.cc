@@ -213,7 +213,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         OH = (IH - KH + PH_L + PH_R) / SH + 1,  // output height
         OW = (IW - KW + PW_L + PW_R) / SW + 1;  // output width
 
-    if(node.GetAttr<std::vector<std::string>>("data_layout")[0]!="NCHW")
+    if(node.GetAttr<std::vector<std::string>>("data_layout")[0].size()>4)
       {
 
         N = input_shape[0],       // batch size
@@ -388,7 +388,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     data_shape = new_data_shape;
     }
 
-    std::cout<<IC<<std::endl;
+    // std::cout<<IC<<std::endl;
     
     float epsilon = std::stof(node.GetAttr<std::vector<std::string>>("epsilon")[0]);
     // std::cout<<"batchnorm ";

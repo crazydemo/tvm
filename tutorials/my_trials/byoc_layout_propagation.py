@@ -31,6 +31,32 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
+
+@relay.op.register_alter_op_layout("nn.conv2d", level=114)
+def alter_conv2d(attrs, inputs, tinfos, out_type):
+    data_layout = attrs['data_layout']
+    kernel_layout = attrs['kernel_layout']
+    data, weight = inputs
+    new_attrs = dict(attrs)
+    # new_attrs['data_layout'] = 'NCHW8c'
+    # new_attrs['kernel_layout'] = 'OIHW8o8i'
+    # return relay.nn.conv2d(data, weight, **new_attrs)
+    new_attrs['data_layout'] = 'NCHW'
+    new_attrs['kernel_layout'] = 'OIHW'
+    if weight.type_annotation.shape[1]>=8:
+        new_attrs = dict(attrs)
+        new_attrs['data_layout'] = 'NCHW8c'
+        new_attrs['kernel_layout'] = 'OIHW8o8i'
+        return relay.nn.conv2d(data, weight, **new_attrs)
+    return relay.nn.conv2d(data, weight, **new_attrs)
+
+# @relay.op.register_alter_op_layout("nn.conv2d", level=101)
+# def alter_conv2d(attrs, inputs, tinfos, out_type):
+#     data, weight = inputs
+#     new_attrs = dict(attrs)
+#     new_attrs["data_layout"] = "NCHW16c"
+#     return relay.nn.conv2d(data, weight, **new_attrs)
+
 def update_lib(lib):
     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
     test_dir = os.path.dirname(os.path.realpath(os.path.expanduser(__file__)))
@@ -58,8 +84,8 @@ class Model(HybridBlock):
         super(Model, self).__init__(**kwargs)
         # use name_scope to give child Blocks appropriate names.
         # with self.name_scope():
-        self.bn1 = nn.BatchNorm()
-        self.bn2 = nn.BatchNorm()
+        # self.bn1 = nn.BatchNorm()
+        # self.bn2 = nn.BatchNorm()
         self.conv0 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
         self.conv1 = nn.Conv2D(64, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
         self.conv2 = nn.Conv2D(64, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
@@ -67,23 +93,23 @@ class Model(HybridBlock):
         self.relu = nn.Activation('relu')
 
     def hybrid_forward(self, F, x):
-        x = self.bn1(x)
+        # x = self.bn1(x)
         x = self.conv0(x)
         x1 = self.relu(self.conv1(x))
         x2 = self.relu(self.conv2(x))
-        x3 = self.bn2(self.conv3(x))
+        x3 = self.conv3(x)
         return x1+x2+x3
 
-def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
+def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     
     mx.random.seed(0)
-    sample = np.ones((batch_size,cin,8,8), np.float32)#mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,8,8))
+    sample = np.ones((batch_size,cin,32, 32), np.float32)#mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,8,8))
     sample_for_mxnet = mx.ndarray.array(sample)
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = mx.cpu()
     # print("input:{}".format(sample_for_mxnet))
 
-    input_shape = (batch_size, cin, 8, 8)
+    input_shape = (batch_size, cin, 32, 32)
     
     model = Model()
     mx.random.seed(0)
@@ -97,8 +123,13 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
     desired_layouts = {"nn.conv2d": ["NCHW8c", "OIHW8o8i"], "nn.batch_norm": ["NCHW8c", "OIHW8o8i"]}#, "nn.bias_add": ["NCHW8c", "OIHW8o8i"]}
     seq = tvm.transform.Sequential(
         [
-            transform.ConvertLayout(desired_layouts),
-            # transform.AlterOpLayout(),
+            # transform.ConvertLayout(desired_layouts),
+            relay.transform.CanonicalizeOps(),
+            # relay.transform.SimplifyInference(),
+            # relay.transform.FoldScaleAxis(),
+
+            transform.AlterOpLayout(),
+            # transform.ConvertLayout(desired_layouts),
             transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
@@ -109,7 +140,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=16):
 
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):#compile the graph x, instruments=[PrintIR()]
         graph, lib, param = tvm.relay.build(seq(mod), target="llvm", params=params)
-    lib = update_lib(lib)
+    # lib = update_lib(lib)
     rt_mod = tvm.contrib.graph_executor.create(graph, lib, tvm.cpu())#Create a runtime executor module given a graph and module.
 
     # print("tvm input{}".format(tvm.nd.array(sample)))
