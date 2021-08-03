@@ -30,6 +30,24 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
+@relay.op.register_alter_op_layout("nn.conv2d", level=114)
+def alter_conv2d(attrs, inputs, tinfos, out_type):
+    data_layout = attrs['data_layout']
+    kernel_layout = attrs['kernel_layout']
+    data, weight = inputs
+    new_attrs = dict(attrs)
+    new_attrs['data_layout'] = 'NCHW'
+    new_attrs['kernel_layout'] = 'OIHW16o'
+    try:
+        if weight.type_annotation.shape[1]>=8:
+            new_attrs = dict(attrs)
+            new_attrs['data_layout'] = 'NCHW8c'
+            new_attrs['kernel_layout'] = 'OIHW8o8i'
+            return relay.nn.conv2d(data, weight, **new_attrs)
+    except:
+        return relay.nn.conv2d(data, weight, **new_attrs)
+    return relay.nn.conv2d(data, weight, **new_attrs)
+
 def update_lib(lib):
     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
     test_dir = os.path.dirname(os.path.realpath(os.path.expanduser(__file__)))
@@ -110,10 +128,11 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         seq = tvm.transform.Sequential(
             [
                 # transform.InferType(),
-                relay.transform.RemoveUnusedFunctions(),
-                # relay.transform.AlterOpLayout(),
-                relay.transform.ConvertLayout(desired_layouts),
-                relay.transform.FoldConstant(),
+                # relay.transform.RemoveUnusedFunctions(),
+                relay.transform.CanonicalizeOps(),
+                relay.transform.AlterOpLayout(),
+                # relay.transform.ConvertLayout(desired_layouts),
+                # relay.transform.FoldConstant(),
                 relay.transform.MergeComposite(pattern_table()),
                 relay.transform.AnnotateTarget("dnnl"),
                 relay.transform.MergeCompilerRegions(),
@@ -121,7 +140,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
                 # transform.InferType(),
             ]
         )
-
+        print(seq(mod))
         with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
             # with tvm.target.Target("llvm"):

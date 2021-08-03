@@ -39,12 +39,12 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     new_attrs = dict(attrs)
     new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OIHW'
+    new_attrs['kernel_layout'] = 'OIHW16o'
     try:
         if weight.type_annotation.shape[1]>=8:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8o8i'
+            new_attrs['data_layout'] = 'NCHW16c'
+            new_attrs['kernel_layout'] = 'OIHW16o16i'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
         return relay.nn.conv2d(data, weight, **new_attrs)
@@ -100,7 +100,7 @@ class Model(HybridBlock):
         x3 = self.bn2(self.conv3(x))
         return x1+x2+x3
 
-def benchmark(batch_size=1, batches=10, warmup=2, cin=8):
+def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     
     mx.random.seed(0)
     sample = np.ones((batch_size,cin,32, 32), np.float32)#mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,8,8))
@@ -124,11 +124,11 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=8):
     seq = tvm.transform.Sequential(
         [
             relay.transform.CanonicalizeOps(),
-            relay.transform.SimplifyInference(),
-            relay.transform.FoldScaleAxis(),
+            # relay.transform.SimplifyInference(),
+            # relay.transform.FoldScaleAxis(),
 
-            # transform.AlterOpLayout(),
-            transform.ConvertLayout(desired_layouts),
+            transform.AlterOpLayout(),
+            # transform.ConvertLayout(desired_layouts),
             transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
