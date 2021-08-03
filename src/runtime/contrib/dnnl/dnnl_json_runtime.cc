@@ -476,13 +476,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
 
-    // std::cout<<"add "; 
-    // for (auto i : data_shape)
-    // {
-    //   std::cout<<i<<" ";
-    // }
-    // std::cout<<std::endl;
-    // // std::cout<<data_dims[0]<<" "<<data_dims[1];
+    std::cout<<"add "; 
+    for (auto i : data_shape)
+    {
+      std::cout<<i<<" ";
+    }
+    std::cout<<std::endl;
+    // std::cout<<data_dims[0]<<" "<<data_dims[1];
     }
     
     
@@ -523,6 +523,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   inline dnnl::memory::desc GenDNNLMemDescByShape(const dnnl::memory::dims& shape, dt dtype) {
     dnnl::memory::desc data_md;
     switch (shape.size()) {
+      case 1:
+        data_md = dnnl::memory::desc({shape, dtype, tag::a});
+        break;
       case 2:
         data_md = dnnl::memory::desc({shape, dtype, tag::ab});
         break;

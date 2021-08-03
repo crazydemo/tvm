@@ -38,15 +38,15 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     kernel_layout = attrs['kernel_layout']
     data, weight = inputs
     new_attrs = dict(attrs)
-    # new_attrs['data_layout'] = 'NCHW8c'
-    # new_attrs['kernel_layout'] = 'OIHW8o8i'
-    # return relay.nn.conv2d(data, weight, **new_attrs)
     new_attrs['data_layout'] = 'NCHW'
     new_attrs['kernel_layout'] = 'OIHW'
-    if weight.type_annotation.shape[1]>=8:
-        new_attrs = dict(attrs)
-        new_attrs['data_layout'] = 'NCHW8c'
-        new_attrs['kernel_layout'] = 'OIHW8o8i'
+    try:
+        if weight.type_annotation.shape[1]>=8:
+            new_attrs = dict(attrs)
+            new_attrs['data_layout'] = 'NCHW8c'
+            new_attrs['kernel_layout'] = 'OIHW8o8i'
+            return relay.nn.conv2d(data, weight, **new_attrs)
+    except:
         return relay.nn.conv2d(data, weight, **new_attrs)
     return relay.nn.conv2d(data, weight, **new_attrs)
 
@@ -84,8 +84,8 @@ class Model(HybridBlock):
         super(Model, self).__init__(**kwargs)
         # use name_scope to give child Blocks appropriate names.
         # with self.name_scope():
-        # self.bn1 = nn.BatchNorm()
-        # self.bn2 = nn.BatchNorm()
+        self.bn1 = nn.BatchNorm()
+        self.bn2 = nn.BatchNorm()
         self.conv0 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
         self.conv1 = nn.Conv2D(64, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
         self.conv2 = nn.Conv2D(64, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
@@ -93,14 +93,14 @@ class Model(HybridBlock):
         self.relu = nn.Activation('relu')
 
     def hybrid_forward(self, F, x):
-        # x = self.bn1(x)
+        x = self.bn1(x)
         x = self.conv0(x)
         x1 = self.relu(self.conv1(x))
         x2 = self.relu(self.conv2(x))
-        x3 = self.conv3(x)
+        x3 = self.bn2(self.conv3(x))
         return x1+x2+x3
 
-def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
+def benchmark(batch_size=1, batches=10, warmup=2, cin=8):
     
     mx.random.seed(0)
     sample = np.ones((batch_size,cin,32, 32), np.float32)#mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,8,8))
@@ -123,13 +123,12 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     desired_layouts = {"nn.conv2d": ["NCHW8c", "OIHW8o8i"], "nn.batch_norm": ["NCHW8c", "OIHW8o8i"]}#, "nn.bias_add": ["NCHW8c", "OIHW8o8i"]}
     seq = tvm.transform.Sequential(
         [
-            # transform.ConvertLayout(desired_layouts),
             relay.transform.CanonicalizeOps(),
-            # relay.transform.SimplifyInference(),
-            # relay.transform.FoldScaleAxis(),
+            relay.transform.SimplifyInference(),
+            relay.transform.FoldScaleAxis(),
 
-            transform.AlterOpLayout(),
-            # transform.ConvertLayout(desired_layouts),
+            # transform.AlterOpLayout(),
+            transform.ConvertLayout(desired_layouts),
             transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
@@ -148,7 +147,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     # print(tvm_output.shape)
-    print("tvm output:{}".format(tvm_output))
+    # print("tvm output:{}".format(tvm_output))
     # for i in range(batches+warmup):
     #     if i == warmup:
     #         tic = time.time()
