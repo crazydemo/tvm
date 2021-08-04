@@ -78,21 +78,21 @@ class Model(HybridBlock):
         super(Model, self).__init__(**kwargs)
         # use name_scope to give child Blocks appropriate names.
         # with self.name_scope():
-        # self.bn1 = nn.BatchNorm()
-        # self.bn2 = nn.BatchNorm()
+        self.bn1 = nn.BatchNorm()
+        self.bn2 = nn.BatchNorm()
         self.conv0 = nn.Conv2D(16, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
-        # self.conv1 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        # self.conv2 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        # self.conv3 = nn.Conv2D(16, 3, use_bias=False)
-        # self.relu = nn.Activation('relu')
+        self.conv1 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        self.conv2 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
+        self.conv3 = nn.Conv2D(16, 3, use_bias=False)
+        self.relu = nn.Activation('relu')
 
     def hybrid_forward(self, F, x):
-        # x = self.bn1(x)
+        x = self.bn1(x)
         x = self.conv0(x)
-        # x1 = self.relu(self.conv1(x))
-        # x2 = self.relu(self.conv2(x))
-        # x3 = self.bn2(self.conv3(x))
-        return x#x1+x2+x3
+        x1 = self.relu(self.conv1(x))
+        x2 = self.relu(self.conv2(x))
+        x3 = self.bn2(self.conv3(x))
+        return x1+x2+x3
 
 def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     
