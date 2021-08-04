@@ -43,11 +43,13 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     try:
         # if weight.type_annotation.shape[1]>=16:
         if weight.data.shape[1]>=16:
+            new_attrs = dict(attrs)
             new_attrs['data_layout'] = 'NCHW16c'
             new_attrs['kernel_layout'] = 'OIHW16o16i'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
         return relay.nn.conv2d(data, weight, **new_attrs)
+    return relay.nn.conv2d(data, weight, **new_attrs)
 
 def update_lib(lib):
     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
@@ -95,9 +97,9 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
             [
-                relay.transform.CanonicalizeOps(),
-                relay.transform.SimplifyInference(),
-                relay.transform.FoldScaleAxis(),
+                # relay.transform.CanonicalizeOps(),
+                # relay.transform.SimplifyInference(),
+                # relay.transform.FoldScaleAxis(),
 
                 relay.transform.AlterOpLayout(),
                 # relay.transform.ConvertLayout(desired_layouts),
@@ -109,8 +111,8 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         )
 
 
-        if params:
-            mod["main"] = bind_params_by_name(mod["main"], params)
+        # if params:
+        #     mod["main"] = bind_params_by_name(mod["main"], params)
         with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
