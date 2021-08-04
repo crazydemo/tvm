@@ -118,9 +118,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         if ("nn.conv2d" == op_name) {
           Conv2d(nid);
         } 
-         else if ("dnnl.conv2d_bias" == op_name) {
-          Conv2d(nid, false, true);
-        }else if ("dnnl.conv2d_relu" == op_name) {
+        else if ("dnnl.conv2d_relu" == op_name) {
           Conv2d(nid, true, false);
         } else if ("dnnl.conv2d_bias_relu" == op_name) {
           Conv2d(nid, true, true);
@@ -227,7 +225,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         OC = weight_shape[0]*weight_shape[4];                   // output channels
     }
 // 
-    // std::cout<<"conv "<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
+    std::cout<<"conv "<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
     // // std::cout<<input_shape.size()<<' '<<std::endl;
     // for (auto in: input_shape)
     // {
@@ -434,7 +432,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // }
     // std::cout<<std::endl;
 
-    auto data_md = dnnl::memory::desc{{shape}, dt::f32, tag::any};
+    auto data_md = dnnl::memory::desc{{shape}, dt::f32, tag::abcd};
 
     // if(shape.size()>4)
     // {data_md = dnnl::memory::desc{{shape}, dt::f32, tag::nChw16c};}
@@ -448,7 +446,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_.push_back(relu);
 
     auto data_memory = BindDNNLMemory(data_entry, data_md);
-    auto out_md = dnnl::memory::desc(shape, dt::f32, tag::any);
+    auto out_md = dnnl::memory::desc(shape, dt::f32, tag::abcd);
     JSONGraphNodeEntry out_entry(nid, 0);
     auto out_memory = BindDNNLMemory(out_entry, out_md);
 
@@ -472,12 +470,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
 
-    std::cout<<"add "; 
-    for (auto i : data_shape)
-    {
-      std::cout<<i<<" ";
-    }
-    std::cout<<std::endl;
+    // std::cout<<"add "; 
+    // for (auto i : data_shape)
+    // {
+    //   std::cout<<i<<" ";
+    // }
+    // std::cout<<std::endl;
     // std::cout<<data_dims[0]<<" "<<data_dims[1];
     }
     
