@@ -225,7 +225,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         OC = weight_shape[0]*weight_shape[4];                   // output channels
     }
 // 
-    std::cout<<"conv "<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
+    // std::cout<<"conv "<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
     // // std::cout<<input_shape.size()<<' '<<std::endl;
     // for (auto in: input_shape)
     // {
