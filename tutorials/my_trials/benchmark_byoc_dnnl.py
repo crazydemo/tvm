@@ -34,22 +34,22 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
-@relay.op.register_alter_op_layout("nn.conv2d", level=400)
-def alter_conv2d(attrs, inputs, tinfos, out_type):
-    data, weight = inputs
-    new_attrs = dict(attrs)
-    new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OIHW16o'
-    try:
-        # if weight.type_annotation.shape[1]>=16:
-        if weight.data.shape[1]>=16:
-            new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16o16i'
-            return relay.nn.conv2d(data, weight, **new_attrs)
-    except:
-        return relay.nn.conv2d(data, weight, **new_attrs)
-    return relay.nn.conv2d(data, weight, **new_attrs)
+# @relay.op.register_alter_op_layout("nn.conv2d", level=400)
+# def alter_conv2d(attrs, inputs, tinfos, out_type):
+#     data, weight = inputs
+#     new_attrs = dict(attrs)
+#     new_attrs['data_layout'] = 'NCHW'
+#     new_attrs['kernel_layout'] = 'OIHW16o'
+#     try:
+#         # if weight.type_annotation.shape[1]>=16:
+#         if weight.data.shape[1]>=16:
+#             new_attrs = dict(attrs)
+#             new_attrs['data_layout'] = 'NCHW16c'
+#             new_attrs['kernel_layout'] = 'OIHW16o16i'
+#             return relay.nn.conv2d(data, weight, **new_attrs)
+#     except:
+#         return relay.nn.conv2d(data, weight, **new_attrs)
+#     return relay.nn.conv2d(data, weight, **new_attrs)
 
 def update_lib(lib):
     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
@@ -81,13 +81,15 @@ def transform_image(image):
     return image
 
 def benchmark(batch_size=1, batches=10, warmup=2):
-    img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
-    img_name = "cat.png"
-    img_path = download_testdata(img_url, img_name, module="data")
-    image = Image.open(img_path).resize((224, 224))
+    # img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
+    # img_name = "cat.png"
+    # img_path = download_testdata(img_url, img_name, module="data")
+    # image = Image.open(img_path).resize((224, 224))
+    # sample = transform_image(image)
+    # print("x", sample.shape)
+    np.random.seed(0)
+    sample = np.random.rand(batch_size, 3, 224, 224)
 
-    sample = transform_image(image)
-    print("x", sample.shape)
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = tvm.cpu()
 
@@ -102,11 +104,11 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
             [
-                relay.transform.CanonicalizeOps(),
-                relay.transform.SimplifyInference(),
-                relay.transform.FoldScaleAxis(),
+                # relay.transform.CanonicalizeOps(),
+                # relay.transform.SimplifyInference(),
+                # relay.transform.FoldScaleAxis(),
 
-                relay.transform.AlterOpLayout(),
+                # relay.transform.AlterOpLayout(),
                 # relay.transform.ConvertLayout(desired_layouts),
                 relay.transform.MergeComposite(pattern_table()),
                 relay.transform.AnnotateTarget("dnnl"),
@@ -116,9 +118,9 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         )
 
 
-        if params:
-            mod["main"] = bind_params_by_name(mod["main"], params)
-        with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):# 
+        # if params:
+        #     mod["main"] = bind_params_by_name(mod["main"], params)
+        with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
 
@@ -126,13 +128,19 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         
         rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")), **params)
         rt_mod.run()
-        tvm_output = rt_mod.get_output(0)
-        print("tvm output:{}".format(tvm_output))
+        for i in range(batches+warmup):
+            if i == warmup:
+                tic = time.time()
+            out = rt_mod.run()
+            # out.wait_to_read()
+        with_fuse_fps = batches * batch_size / (time.time() - tic)
+        # tvm_output = rt_mod.get_output(0)
+        # print("tvm output:{}".format(tvm_output))
         # for i in range(batches+warmup):
         #     if i == warmup:
         #         tic = time.time()
         #     out = rt_mod.run()
         # with_fuse_ms = (time.time() - tic) / (batches) * 1000
-        # print("{}: with_fuse_ms: {:.4f} ms".format(model_name, with_fuse_ms))
+        print("{}: with_fuse_ms: {:.4f} ms".format(model_name, with_fuse_fps))
 
 benchmark(batch_size=1)
