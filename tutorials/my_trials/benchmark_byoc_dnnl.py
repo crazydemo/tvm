@@ -93,13 +93,18 @@ def benchmark(batch_size=1, batches=10, warmup=2):
 
     input_shape = (batch_size, 3, 224, 224)
     for model_name in model_dict.keys():
-        mod, params = model_dict[model_name].get_workload(batch_size=batch_size, dtype="float32")
+        block = mx.gluon.model_zoo.vision.get_resnet(1, 50, pretrained=True)
+        mod, params = relay.frontend.from_mxnet(
+            block, shape={"data": input_shape}, dtype="float32"
+        )
+        # mod, params = model_dict[model_name].get_workload(batch_size=batch_size, dtype="float32")
+        # print(mod)
         desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
             [
-                # relay.transform.CanonicalizeOps(),
-                # relay.transform.SimplifyInference(),
-                # relay.transform.FoldScaleAxis(),
+                relay.transform.CanonicalizeOps(),
+                relay.transform.SimplifyInference(),
+                relay.transform.FoldScaleAxis(),
 
                 relay.transform.AlterOpLayout(),
                 # relay.transform.ConvertLayout(desired_layouts),
@@ -111,9 +116,9 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         )
 
 
-        # if params:
-        #     mod["main"] = bind_params_by_name(mod["main"], params)
-        with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
+        if params:
+            mod["main"] = bind_params_by_name(mod["main"], params)
+        with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
 
