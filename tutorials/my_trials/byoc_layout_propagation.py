@@ -20,6 +20,10 @@ from tvm.contrib import utils
 from tvm.relay.testing.temp_op_attr import TempOpAttr
 from tvm.relay import transform, analysis
 from tvm.relay.build_module import bind_params_by_name
+from tvm.contrib.download import download_testdata
+from mxnet.gluon.model_zoo.vision import get_model
+from PIL import Image
+from matplotlib import pyplot as plt
 
 import mxnet as mx
 from mxnet.gluon import HybridBlock, nn
@@ -32,6 +36,13 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
+def transform_image(image):
+    image = np.array(image) - np.array([123.0, 117.0, 104.0])
+    image /= np.array([58.395, 57.12, 57.375])
+    image = image.transpose((2, 0, 1))
+    image = image[np.newaxis, :]
+    return image
+
 
 @relay.op.register_alter_op_layout("nn.conv2d", level=114)
 def alter_conv2d(attrs, inputs, tinfos, out_type):
@@ -40,15 +51,19 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     new_attrs = dict(attrs)
     new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OIHW16o'
+    new_attrs['kernel_layout'] = 'OHWI8o'
     try:
-        # if weight.type_annotation.shape[1]>=16:
-        if weight.data.shape[1]>=16:
+        if weight.type_annotation.shape[1]>=16:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16o16i'
+            new_attrs['data_layout'] = 'NCHW8c'
+            new_attrs['kernel_layout'] = 'OIHW8i8o'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
+        if weight.data.shape[1]>=16:
+            new_attrs = dict(attrs)
+            new_attrs['data_layout'] = 'NCHW8c'
+            new_attrs['kernel_layout'] = 'OIHW8i8o'
+            return relay.nn.conv2d(data, weight, **new_attrs)
         return relay.nn.conv2d(data, weight, **new_attrs)
 
 def update_lib(lib):
@@ -80,7 +95,7 @@ class Model(HybridBlock):
         # with self.name_scope():
         self.bn1 = nn.BatchNorm()
         self.bn2 = nn.BatchNorm()
-        self.conv0 = nn.Conv2D(16, 3, use_bias=False)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
+        self.conv0 = nn.Conv2D(8, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
         self.conv1 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
         self.conv2 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
         self.conv3 = nn.Conv2D(16, 3, use_bias=False)
@@ -88,7 +103,7 @@ class Model(HybridBlock):
 
     def hybrid_forward(self, F, x):
         x = self.bn1(x)
-        x = self.conv0(x)
+        x = self.relu(self.conv0(x))
         x1 = self.relu(self.conv1(x))
         x2 = self.relu(self.conv2(x))
         x3 = self.bn2(self.conv3(x))
@@ -97,8 +112,14 @@ class Model(HybridBlock):
 def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     
     mx.random.seed(0)
-    sample = np.ones((batch_size,cin,8, 8), np.float32)#mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,cin,8,8))
-    sample_for_mxnet = mx.ndarray.array(sample)
+    # sample = sample = np.ones((batch_size, cin, 8, 8))#np.random.rand(batch_size, cin, 8, 8)
+    sample = np.random.rand(batch_size, cin, 8, 8)
+    # sample_for_mxnet = mx.ndarray.array(sample)
+    # img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
+    # img_name = "cat.png"
+    # img_path = download_testdata(img_url, img_name, module="data")
+    # image = Image.open(img_path).resize((224, 224))
+    # sample = transform_image(image)
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = mx.cpu()
     # print("input:{}".format(sample_for_mxnet))
@@ -108,18 +129,19 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     model = Model()
     mx.random.seed(0)
     model.initialize(ctx=ctx)
+    sample_for_mxnet = mx.ndarray.array(sample)
     output = model(sample_for_mxnet)
     print("mxnet output:{}".format(output))
 
 
     mod, params = relay.frontend.from_mxnet(model, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
     # print(mod)
-    desired_layouts = {"nn.conv2d": ["NCHW8c", "OIHW8o8i"], "nn.batch_norm": ["NCHW8c", "OIHW8o8i"]}#, "nn.bias_add": ["NCHW8c", "OIHW8o8i"]}
+    # desired_layouts = {"nn.conv2d": ["NCHW8c", "OIHW8o8i"], "nn.batch_norm": ["NCHW8c", "OIHW8o8i"]}#, "nn.bias_add": ["NCHW8c", "OIHW8o8i"]}
     seq = tvm.transform.Sequential(
         [
-            relay.transform.CanonicalizeOps(),
-            relay.transform.SimplifyInference(),
-            relay.transform.FoldScaleAxis(),
+            # relay.transform.CanonicalizeOps(),
+            # relay.transform.SimplifyInference(),
+            # relay.transform.FoldScaleAxis(),
 
             transform.AlterOpLayout(),
             # transform.ConvertLayout(desired_layouts),
@@ -131,15 +153,15 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
         ]
     )
 
-    if params:
-        mod["main"] = bind_params_by_name(mod["main"], params)
+    # if params:
+    #     mod["main"] = bind_params_by_name(mod["main"], params)
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):#compile the graph x, instruments=[PrintIR()]
         graph, lib, param = tvm.relay.build(seq(mod), target="llvm", params=params)
-    # lib = update_lib(lib)
+    lib = update_lib(lib)
     rt_mod = tvm.contrib.graph_executor.create(graph, lib, tvm.cpu())#Create a runtime executor module given a graph and module.
 
     # print("tvm input{}".format(tvm.nd.array(sample)))
-    rt_mod.set_input("data", tvm.nd.array(sample), **param)
+    rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")), **param)
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     # print(tvm_output.shape)

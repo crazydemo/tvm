@@ -49,11 +49,15 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   std::map<std::string, tag> layout_dict {
     {"NCHW16c", tag::nChw16c}, 
     {"OIHW16o16i", tag::OIhw16o16i},
+    {"OIHW16i16o", tag::OIhw16i16o},
+    {"OIHW16o", tag::Oihw16o},
+    {"OHWI16o", tag::Ohwi16o},
     {"NCHW", tag::nchw},
     {"OIHW", tag::oihw},
     {"NCHW8c", tag::nChw8c}, 
     {"OIHW8o8i", tag::OIhw8o8i},
-    {"OIHW16o", tag::Oihw16o}
+    {"OIHW8i8o", tag::OIhw8i8o},
+    {"OHWI8o", tag::Ohwi8o},
     };
 
   DNNLJSONRuntime(const std::string& symbol_name, const std::string& graph_json,
@@ -181,8 +185,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto weight_df = layout_dict[node.GetAttr<std::vector<std::string>>("kernel_layout")[0]];
     auto dst_df = src_df;
 
-    if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OIHW16o")
-    {dst_df = layout_dict["NCHW16c"];}
+    if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI8o")
+    {dst_df = layout_dict["NCHW8c"];}
     
     // for (auto in: input_shape)
     // {
@@ -222,7 +226,17 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0].size()>4)
       {
-        OC = weight_shape[0]*weight_shape[4];                   // output channels
+        OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
+        if (node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI8o")
+        {
+          OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
+          KH = weight_shape[1];
+          KW = weight_shape[2];
+          OH = (IH - KH + PH_L + PH_R) / SH + 1;
+          OW = (IW - KW + PW_L + PW_R) / SW + 1;
+          // std::cout<<"conv  OH "<<OH<<' '<<IH<<' '<<KH<<' '<<PH_L<<' '<<PH_R<<' '<<SH<<std::endl;
+          // std::cout<<"conv  OW "<<OW<<' '<<IW<<' '<<KW<<' '<<PW_L<<' '<<PW_R<<' '<<SW<<std::endl;
+        }
     }
 // 
     // std::cout<<"conv "<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
@@ -325,6 +339,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         IC = input_shape[1],               // input channels
         OC = weight_shape[0];              // output channels
 
+    // std::cout<<"dense"<<IC<<" "<<OC<<std::endl;
+
     // Memory shapes.
     dnnl::memory::dims data_dims = {B, IC};
     dnnl::memory::dims weight_dims = {OC, IC};
@@ -373,13 +389,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if(data_shape.size()>4)
     {IC = IC * data_shape[data_shape.size()-1];
     data_shape[1] = IC;
-    // dnnl::memory::dims new_data_shape{1,2,3,4};
-    // for(int i=0; i<data_shape.size()-1; i++)
-    // {new_data_shape[i] = data_shape[i];}
-    // data_shape = new_data_shape;
+    dnnl::memory::dims new_data_shape{1,2,3,4};
+    for(int i=0; i<data_shape.size()-1; i++)
+    {new_data_shape[i] = data_shape[i];}
+    data_shape = new_data_shape;
     }
 
-    // std::cout<<IC<<std::endl;
+    // std::cout<<"BN "<<IC<<std::endl;
     
     float epsilon = std::stof(node.GetAttr<std::vector<std::string>>("epsilon")[0]);
     // std::cout<<"batchnorm ";
@@ -425,6 +441,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_entry = node.GetInputs()[0];
     dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
 
+    
+    if(shape.size()>4)
+    {auto IC = shape[1] * shape[shape.size()-1];
+    shape[1] = IC;
+    dnnl::memory::dims new_data_shape{1,2,3,4};
+    for(int i=0; i<new_data_shape.size()-1; i++)
+    {new_data_shape[i] = shape[i];}
+    shape = new_data_shape;
+    }
+
     // std::cout<<"Relu "; 
     // for (auto i : shape)
     // {
@@ -432,10 +458,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // }
     // std::cout<<std::endl;
 
-    auto data_md = dnnl::memory::desc{{shape}, dt::f32, tag::abcd};
 
+    auto data_format = tag::abcd;
     // if(shape.size()>4)
-    // {data_md = dnnl::memory::desc{{shape}, dt::f32, tag::nChw16c};}
+    // {data_format = tag::aBcd16b;}
+
+    auto data_md = dnnl::memory::desc{{shape}, dt::f32, data_format};
 
     auto relu_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_inference,
                                                  dnnl::algorithm::eltwise_relu, data_md, 0);
@@ -446,7 +474,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_.push_back(relu);
 
     auto data_memory = BindDNNLMemory(data_entry, data_md);
-    auto out_md = dnnl::memory::desc(shape, dt::f32, tag::abcd);
+    auto out_md = dnnl::memory::desc(shape, dt::f32, data_format);
     JSONGraphNodeEntry out_entry(nid, 0);
     auto out_memory = BindDNNLMemory(out_entry, out_md);
 
@@ -476,7 +504,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     //   std::cout<<i<<" ";
     // }
     // std::cout<<std::endl;
-    // std::cout<<data_dims[0]<<" "<<data_dims[1];
+
     }
     
     

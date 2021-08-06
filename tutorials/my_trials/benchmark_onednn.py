@@ -42,6 +42,6 @@ def benchmark(batch_size=128, batches=10, warmup=2):
         #     out.wait_to_read()
         # quantized_fps = batches * batch_size / (time.time() - tic)
 
-        print('{}: FUSED: {} FPS    QUANTIZED: {} FPS'.format(model_name, with_fuse_fps))
+        print('{}: FUSED: {} FPS'.format(model_name, with_fuse_fps))
 
 benchmark()
