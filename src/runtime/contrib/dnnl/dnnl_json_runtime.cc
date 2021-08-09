@@ -453,22 +453,30 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_entry = node.GetInputs()[0];
     dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     auto data_format = tag::abcd;
+    std::cout<<"Relu raw "; 
+    for (auto i : shape)
+    {
+      std::cout<<i<<" ";
+    }
+    std::cout<<std::endl;
 
     if(shape.size()>4)
-    {data_format = tag::aBcd16b;}
-    // shape[1] = IC;
-    // dnnl::memory::dims new_data_shape{1,2,3,4};
-    // for(int i=0; i<new_data_shape.size()-1; i++)
-    // {new_data_shape[i] = shape[i];}
-    // shape = new_data_shape;
-    // }
+    {
+      data_format = tag::aBcd16b;
+      shape[1] = shape[1] * shape[shape.size()-1];
+      dnnl::memory::dims new_data_shape{1,2,3,4};
+      for(int i=0; i<new_data_shape.size(); i++)
+      {new_data_shape[i] = shape[i];}
+      shape = new_data_shape;
+    }
 
-    // std::cout<<"Relu "; 
-    // for (auto i : shape)
-    // {
-    //   std::cout<<i<<" ";
-    // }
+    std::cout<<"Relu new "; 
+    for (auto i : shape)
+    {
+      std::cout<<i<<" ";
+    }
     // std::cout<<std::endl;
+    std::cout<<std::endl;
 
     auto data_md = dnnl::memory::desc{{shape}, dt::f32, data_format};
 
