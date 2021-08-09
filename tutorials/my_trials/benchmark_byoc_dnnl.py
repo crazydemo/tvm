@@ -41,18 +41,18 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     new_attrs = dict(attrs)
     new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OIHW'#'OHWI8o'
+    new_attrs['kernel_layout'] = 'OIHW'#8o'
     try:
-        if weight.type_annotation.shape[1]>=8:
+        if weight.type_annotation.shape[1]>=16:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
+            new_attrs['data_layout'] = 'NCHW16c'
+            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
-        if weight.data.shape[1]>=8:
+        if weight.data.shape[1]>=16:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
+            new_attrs['data_layout'] = 'NCHW16c'
+            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
             return relay.nn.conv2d(data, weight, **new_attrs)
         return relay.nn.conv2d(data, weight, **new_attrs)
     return relay.nn.conv2d(data, weight, **new_attrs)
@@ -107,9 +107,9 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         )
         # mod, params = model_dict[model_name].get_workload(batch_size=batch_size, dtype="float32")
         # print(mod)
-        sample_for_mxnet = mx.ndarray.array(sample)
-        output = block(sample_for_mxnet)
-        print("mxnet output:{}".format(output))
+        # sample_for_mxnet = mx.ndarray.array(sample)
+        # output = block(sample_for_mxnet)
+        # print("mxnet output:{}".format(output))
         # print(params)
         desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
