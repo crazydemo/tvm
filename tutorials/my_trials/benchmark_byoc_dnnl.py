@@ -22,6 +22,7 @@ from tvm.contrib.download import download_testdata
 from mxnet.gluon.model_zoo.vision import get_model
 from PIL import Image
 from matplotlib import pyplot as plt
+from tvm.contrib.debugger import debug_executor as graph_executor
 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
 model_dict = {'resnet50_v1': resnet}
@@ -39,7 +40,7 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     new_attrs = dict(attrs)
     new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OHWI8o'
+    new_attrs['kernel_layout'] = 'OIHW'#'OHWI8o'
     try:
         if weight.type_annotation.shape[1]>=8:
             new_attrs = dict(attrs)
@@ -85,14 +86,14 @@ def transform_image(image):
     return image
 
 def benchmark(batch_size=1, batches=10, warmup=2):
-    # img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
-    # img_name = "cat.png"
-    # img_path = download_testdata(img_url, img_name, module="data")
-    # image = Image.open(img_path).resize((224, 224))
-    # sample = transform_image(image)
+    img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
+    img_name = "cat.png"
+    img_path = download_testdata(img_url, img_name, module="data")
+    image = Image.open(img_path).resize((224, 224))
+    sample = transform_image(image)
     # print("x", sample.shape)
     # np.random.seed(0)
-    sample = np.ones((batch_size, 3, 224, 224))#np.random.rand(batch_size, 3, 224, 224)
+    # sample = np.ones((batch_size, 3, 224, 224))#np.random.rand(batch_size, 3, 224, 224)
 
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = tvm.cpu()
@@ -108,6 +109,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         sample_for_mxnet = mx.ndarray.array(sample)
         output = block(sample_for_mxnet)
         print("mxnet output:{}".format(output))
+        # print(params)
         desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
             [
@@ -120,7 +122,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
                 relay.transform.AlterOpLayout(),
                 # tvm.transform.PrintIR(),
                 # relay.transform.ConvertLayout(desired_layouts),
-                relay.transform.MergeComposite(pattern_table()),
+                # relay.transform.MergeComposite(pattern_table()),
                 relay.transform.AnnotateTarget("dnnl"),
                 relay.transform.MergeCompilerRegions(),
                 relay.transform.PartitionGraph(),
@@ -134,11 +136,17 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
-
-        rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
+        # print(json)
+        rt_mod = graph_executor.create(json, lib, ctx, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
         
-        rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")), **params)
+        rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
+        rt_mod.set_input(**params)
         rt_mod.run()
+
+        # out= rt_mod.debug_get_output("tvmgen_default_dnnl_0", out=tvm.nd.empty((1, 64, 112, 112), dtype="float32"))
+        # print(out)
+        # tvm_out = rt_mod.get_output(1, tvm.nd.empty((1, 1000), "float32")).numpy()
+        # print(tvm_out)
         # for i in range(batches+warmup):
         #     if i == warmup:
         #         tic = time.time()

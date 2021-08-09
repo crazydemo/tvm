@@ -238,6 +238,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           // std::cout<<"conv  OW "<<OW<<' '<<IW<<' '<<KW<<' '<<PW_L<<' '<<PW_R<<' '<<SW<<std::endl;
         }
     }
+    // std::cout<<"conv "<<OC<<" "<<OH<<" "<<OW<<std::endl;
 // 
     // std::cout<<"conv "<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
     // // std::cout<<input_shape.size()<<' '<<std::endl;
@@ -386,6 +387,44 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto variance_entry = node.GetInputs()[4];
     dnnl::memory::dims data_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     dnnl::memory::dim IC = data_shape[1];
+
+    // std::cout<<"batchnorm raw data shape";
+    // for(auto in : data_shape)
+    // {
+    //   std::cout<<in<<" ";
+    // }
+    // std::cout<<std::endl;
+
+    // std::cout<<"batchnorm raw gamma_entry shape";
+    // for(auto in : nodes_[gamma_entry.id_].GetOpShape()[gamma_entry.index_])
+    // {
+    //   std::cout<<in<<" ";
+    // }
+    // std::cout<<std::endl;
+
+    // std::cout<<"batchnorm raw beta_entry shape";
+    // for(auto in : nodes_[beta_entry.id_].GetOpShape()[beta_entry.index_])
+    // {
+    //   std::cout<<in<<" ";
+    // }
+    // std::cout<<std::endl;
+
+    // std::cout<<"batchnorm raw mean_entry shape";
+    // for(auto in : nodes_[mean_entry.id_].GetOpShape()[mean_entry.index_])
+    // {
+    //   std::cout<<in<<" ";
+    // }
+    // std::cout<<std::endl;
+
+    // std::cout<<"batchnorm raw variance_entry shape";
+    // for(auto in : nodes_[variance_entry.id_].GetOpShape()[variance_entry.index_])
+    // {
+    //   std::cout<<in<<" ";
+    // }
+    // std::cout<<std::endl;
+
+    auto data_format = tag::abcd;
+
     if(data_shape.size()>4)
     {IC = IC * data_shape[data_shape.size()-1];
     data_shape[1] = IC;
@@ -393,12 +432,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     for(int i=0; i<data_shape.size()-1; i++)
     {new_data_shape[i] = data_shape[i];}
     data_shape = new_data_shape;
+    data_format = tag::aBcd8b;
     }
 
     // std::cout<<"BN "<<IC<<std::endl;
     
     float epsilon = std::stof(node.GetAttr<std::vector<std::string>>("epsilon")[0]);
-    // std::cout<<"batchnorm ";
+    // std::cout<<"batchnorm new shape";
     // for(auto in : data_shape)
     // {
     //   std::cout<<in<<" ";
@@ -406,7 +446,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // std::cout<<std::endl;
     
     // Memory description.
-    dnnl::memory::desc data_md = GenDNNLMemDescByShape(data_shape, dt::f32);
+    dnnl::memory::desc data_md = dnnl::memory::desc({data_shape, dt::f32, data_format});//GenDNNLMemDescByShape(data_shape, dt::f32);
 
     // BN description.
     auto bn_desc = dnnl::batch_normalization_forward::desc(
@@ -443,13 +483,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     
     if(shape.size()>4)
-    {auto IC = shape[1] * shape[shape.size()-1];
-    shape[1] = IC;
-    dnnl::memory::dims new_data_shape{1,2,3,4};
-    for(int i=0; i<new_data_shape.size()-1; i++)
-    {new_data_shape[i] = shape[i];}
-    shape = new_data_shape;
-    }
+    {auto IC = shape[1] * shape[shape.size()-1];}
+    // shape[1] = IC;
+    // dnnl::memory::dims new_data_shape{1,2,3,4};
+    // for(int i=0; i<new_data_shape.size()-1; i++)
+    // {new_data_shape[i] = shape[i];}
+    // shape = new_data_shape;
+    // }
 
     // std::cout<<"Relu "; 
     // for (auto i : shape)
@@ -460,8 +500,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
 
     auto data_format = tag::abcd;
-    // if(shape.size()>4)
-    // {data_format = tag::aBcd16b;}
+    if(shape.size()>4)
+    {data_format = tag::abcde;}
 
     auto data_md = dnnl::memory::desc{{shape}, dt::f32, data_format};
 
