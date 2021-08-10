@@ -24,7 +24,7 @@ from PIL import Image
 from matplotlib import pyplot as plt
 # import tvm.contrib.graph_executor as graph_executor
 from tvm.contrib.debugger import debug_executor as graph_executor
-
+# 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
 model_dict = {'resnet50_v1': resnet}
 
@@ -117,10 +117,10 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
             [
-                # relay.transform.CanonicalizeOps(),
-                # relay.transform.SimplifyInference(),
-                # relay.transform.FoldScaleAxis(),
-                # relay.transform.SimplifyExpr(),
+                relay.transform.CanonicalizeOps(),
+                relay.transform.SimplifyInference(),
+                relay.transform.FoldScaleAxis(),
+                relay.transform.SimplifyExpr(),
                 # relay.transform.FuseOps(),
                 # tvm.transform.PrintIR(),
                 relay.transform.AlterOpLayout(),
@@ -135,8 +135,8 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         )
 
 
-        # if params:
-        #     mod["main"] = bind_params_by_name(mod["main"], params)
+        if params:
+            mod["main"] = bind_params_by_name(mod["main"], params)
         with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
@@ -158,8 +158,8 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         #     # out.wait_to_read()
         # with_fuse_fps = batches * batch_size / (time.time() - tic)
         # print("{}: with_fuse_ms: {:.4f} ms".format(model_name, with_fuse_fps))
-        tvm_output = rt_mod.get_output(0)
-        print(tvm_output)
+        # tvm_output = rt_mod.get_output(0)
+        # print(tvm_output)
         
 
 benchmark(batch_size=1)
