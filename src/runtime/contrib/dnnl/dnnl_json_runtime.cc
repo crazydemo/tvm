@@ -183,10 +183,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // std::cout<<node.GetAttr<std::vector<std::string>>("kernel_layout")[0]<<std::endl;
     auto src_df = layout_dict[node.GetAttr<std::vector<std::string>>("data_layout")[0]];
     auto weight_df = layout_dict[node.GetAttr<std::vector<std::string>>("kernel_layout")[0]];
-    auto dst_df = src_df;
+    auto dst_df = layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
 
-    if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI16o")
-    {dst_df = layout_dict["NCHW16c"];}
+    // if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI8o")
+    // {dst_df = layout_dict["NCHW8c"];}
     
     // for (auto in: input_shape)
     // {
@@ -227,7 +227,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0].size()>4)
       {
         OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
-        if (node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI16o")
+        if (node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI8o")
         {
           OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
           KH = weight_shape[1];
@@ -404,7 +404,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     for(int i=0; i<data_shape.size()-1; i++)
     {new_data_shape[i] = data_shape[i];}
     data_shape = new_data_shape;
-    data_format = tag::aBcd16b;
+    data_format = tag::aBcd8b;
     }
 
     // std::cout<<"BN "<<IC<<std::endl;
@@ -453,16 +453,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_entry = node.GetInputs()[0];
     dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     auto data_format = tag::abcd;
-    std::cout<<"Relu raw "; 
-    for (auto i : shape)
-    {
-      std::cout<<i<<" ";
-    }
-    std::cout<<std::endl;
+    // std::cout<<"Relu raw "; 
+    // for (auto i : shape)
+    // {
+    //   std::cout<<i<<" ";
+    // }
+    // std::cout<<std::endl;
 
     if(shape.size()>4)
     {
-      data_format = tag::aBcd16b;
+      data_format = tag::aBcd8b;
       shape[1] = shape[1] * shape[shape.size()-1];
       dnnl::memory::dims new_data_shape{1,2,3,4};
       for(int i=0; i<new_data_shape.size(); i++)
@@ -470,13 +470,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       shape = new_data_shape;
     }
 
-    std::cout<<"Relu new "; 
-    for (auto i : shape)
-    {
-      std::cout<<i<<" ";
-    }
+    // std::cout<<"Relu new "; 
+    // for (auto i : shape)
+    // {
+    //   std::cout<<i<<" ";
+    // }
+    // // std::cout<<std::endl;
     // std::cout<<std::endl;
-    std::cout<<std::endl;
 
     auto data_md = dnnl::memory::desc{{shape}, dt::f32, data_format};
 

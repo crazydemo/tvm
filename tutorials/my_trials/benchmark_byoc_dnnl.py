@@ -22,8 +22,8 @@ from tvm.contrib.download import download_testdata
 from mxnet.gluon.model_zoo.vision import get_model
 from PIL import Image
 from matplotlib import pyplot as plt
-import tvm.contrib.graph_executor as graph_executor
-# from tvm.contrib.debugger import debug_executor as graph_executor
+# import tvm.contrib.graph_executor as graph_executor
+from tvm.contrib.debugger import debug_executor as graph_executor
 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
 model_dict = {'resnet50_v1': resnet}
@@ -41,18 +41,21 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     new_attrs = dict(attrs)
     new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OIHW'#8o'
+    new_attrs['kernel_layout'] = 'OHWI8o'
+    new_attrs['out_layout'] = 'NCHW8c'
     try:
-        if weight.type_annotation.shape[1]>=16:
+        if weight.type_annotation.shape[1]>=8:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
+            new_attrs['data_layout'] = 'NCHW8c'
+            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
+            new_attrs['out_layout'] = 'NCHW8c'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
-        if weight.data.shape[1]>=16:
+        if weight.data.shape[1]>=8:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
+            new_attrs['data_layout'] = 'NCHW8c'
+            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
+            new_attrs['out_layout'] = 'NCHW8c'
             return relay.nn.conv2d(data, weight, **new_attrs)
         return relay.nn.conv2d(data, weight, **new_attrs)
     return relay.nn.conv2d(data, weight, **new_attrs)
@@ -94,7 +97,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     sample = transform_image(image)
     # print("x", sample.shape)
     # np.random.seed(0)
-    # sample = np.ones((batch_size, 3, 224, 224))#np.random.rand(batch_size, 3, 224, 224)
+    # sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
 
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = tvm.cpu()
@@ -138,7 +141,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
         # print(json)
-        rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
+        rt_mod = graph_executor.create(json, lib, ctx, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
         
         rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
         rt_mod.set_input(**params)
