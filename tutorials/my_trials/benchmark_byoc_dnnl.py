@@ -22,8 +22,8 @@ from tvm.contrib.download import download_testdata
 from mxnet.gluon.model_zoo.vision import get_model
 from PIL import Image
 from matplotlib import pyplot as plt
-# import tvm.contrib.graph_executor as graph_executor
-from tvm.contrib.debugger import debug_executor as graph_executor
+import tvm.contrib.graph_executor as graph_executor
+# from tvm.contrib.debugger import debug_executor as graph_executor
 # 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
 model_dict = {'resnet50_v1': resnet}
@@ -130,7 +130,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
                 relay.transform.AnnotateTarget("dnnl"),
                 relay.transform.MergeCompilerRegions(),
                 relay.transform.PartitionGraph(),
-                # tvm.transform.PrintIR(),
+                tvm.transform.PrintIR(),
             ]
         )
 
@@ -141,7 +141,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
         # print(json)
-        rt_mod = graph_executor.create(json, lib, ctx, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
+        rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
         
         rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
         rt_mod.set_input(**params)

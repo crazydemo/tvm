@@ -121,13 +121,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto op_name = node.GetOpName();
         if ("nn.conv2d" == op_name) {
           Conv2d(nid);
-        } 
-        else if ("dnnl.conv2d_relu" == op_name) {
+        } else if ("dnnl.conv2d_bias" == op_name) {
+          Conv2d(nid, false, true);
+        } else if ("dnnl.conv2d_relu" == op_name) {
           Conv2d(nid, true, false);
         } else if ("dnnl.conv2d_bias_relu" == op_name) {
           Conv2d(nid, true, true);
         } else if ("nn.dense" == op_name) {
           Dense(nid);
+        } else if ("dnnl.dense_bias" == op_name) {
+          Dense(nid, true);
         } else if ("nn.batch_norm" == op_name) {
           BatchNorm(nid);
         } else if ("nn.relu" == op_name) {
@@ -327,7 +330,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                          {DNNL_ARG_DST, conv2d_dst_memory}});
   }
 
-  void Dense(const size_t& nid) {
+  void Dense(const size_t& nid, const bool has_bias = false) {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -340,6 +343,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         IC = input_shape[1],               // input channels
         OC = weight_shape[0];              // output channels
 
+    
     // std::cout<<"dense"<<IC<<" "<<OC<<std::endl;
 
     // Memory shapes.
@@ -366,8 +370,15 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_memory = BindDNNLMemory(data_entry, data_md);
     auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
     auto bias_memory = dnnl::memory(bias_md, engine_);
-    float bias[OC] = {0};
-    write_to_dnnl_memory(bias, bias_memory, OC * sizeof(float));
+    if (has_bias) {
+      auto bias_entry = node.GetInputs()[2];
+      BindDNNLMemory(bias_entry, bias_memory);
+    } else {
+      float bias[OC] = {0};
+      write_to_dnnl_memory(bias, bias_memory, OC * sizeof(float));
+    }
+    // float bias[OC] = {0};
+    // write_to_dnnl_memory(bias, bias_memory, OC * sizeof(float));
     JSONGraphNodeEntry out_entry(nid, 0);
     auto dst_memory = BindDNNLMemory(out_entry, dense_prim_desc.dst_desc());
 
