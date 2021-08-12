@@ -1,4 +1,5 @@
 # BENCHMARKING SCRIPT FOR GLUON MXNET 2.0
+from hashlib import new
 import time
 import mxnet as mx
 import warnings
@@ -6,7 +7,8 @@ from tvm._ffi._ctypes.ndarray import TVMPyCapsuleDestructor
 
 from tvm.relay.build_module import GraphExecutor
 from tvm.relay.expr import Tuple
-from tvm.relay.transform.transform import AlterOpLayout
+from tvm.relay.op.contrib.arm_compute_lib import conv2d
+from tvm.relay.transform.transform import AlterOpLayout, CanonicalizeCast
 
 # from torch._C import T
 warnings.filterwarnings("ignore")
@@ -54,17 +56,20 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     new_attrs = dict(attrs)
     new_attrs['data_layout'] = 'NCHW'
     new_attrs['kernel_layout'] = 'OHWI8o'
+    new_attrs['out_layout'] = 'NCHW8c'
     try:
         if weight.type_annotation.shape[1]>=8:
             new_attrs = dict(attrs)
             new_attrs['data_layout'] = 'NCHW8c'
             new_attrs['kernel_layout'] = 'OIHW8i8o'
+            new_attrs['out_layout'] = 'NCHW8c'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
         if weight.data.shape[1]>=8:
             new_attrs = dict(attrs)
             new_attrs['data_layout'] = 'NCHW8c'
             new_attrs['kernel_layout'] = 'OIHW8i8o'
+            new_attrs['out_layout'] = 'NCHW8c'
             return relay.nn.conv2d(data, weight, **new_attrs)
         return relay.nn.conv2d(data, weight, **new_attrs)
 
@@ -90,40 +95,107 @@ def update_lib(lib):
     lib = tvm.runtime.load_module(lib_path)
     return lib
 
+
+@relay.transform.function_pass(opt_level=1)
+class CustomPipeline:
+    """Simple test function to replace one argument to another."""
+
+    def __init__(self):
+        # self.multiplier = multiplier
+        self.cnt = 0
+        self.merge_dict = {}
+        self.op_lst = []
+
+    # This function can define a pass.
+    def transform_function(self, func, mod, ctx):
+        self.merge_consecutive_add(func.body)
+        res = self.rewrite_graph()
+        res = relay.Function([self.op_lst[-1]], res)
+        return res
+
+    def rewrite_graph(self):
+        # print(max(obj.merge_dict.keys()))
+        for i in range(max(self.merge_dict.keys()), -1, -1):
+            cur_node = self.op_lst[i]
+            if i in self.merge_dict.keys():
+                new_node = self.get_op(cur_node, cur_node.args[0], self.merge_dict[i])
+            else:
+                if cur_node.op.name=="add":
+                    new_node = self.get_op(cur_node, new_node, cur_node.args[1])
+                elif cur_node.op.name=="nn.conv2d":
+                    new_node = self.get_op(cur_node, new_node, cur_node.args[1])
+                    # print(new_node.op.name)
+                else:
+                    new_node = self.get_op(cur_node, new_node)
+                    # return new_node
+                    # if i==4:
+                    #     return new_node
+            print(new_node.op.name)
+        return new_node
+
+    def merge_consecutive_add(self, node):
+        while node:
+            try:
+                if self.check_consecutive_add(node):
+                    a1 = node
+                    a2 = a1.args[0]
+                    data = relay.add(a1.args[1], a2.args[1])
+                    self.merge_dict[self.cnt] = data
+                    # print(obj.cnt)
+                    node = a2
+                # print(node.op.name)
+                self.op_lst.append(node)
+                node = node.args[0]
+                self.cnt += 1
+            except:
+                self.cnt = 0
+                break
+
+    def check_consecutive_add(self, node):
+        try:
+            # print("check ...")
+            return node.op.name=='add' and len(node.type_args[1].shape)==3 and node.args[0].op.name=='add' and len(node.args[0].type_args[1].shape)==3
+        except:
+            return False
+    
+    def get_op(self, node, *args):
+        if node.op.name=='nn.conv2d':
+            return relay.nn.conv2d(args[0], args[1])
+        elif node.op.name=='nn.relu':
+            return relay.nn.relu(args[0])
+        elif node.op.name=='add':
+            return relay.add(args[0], args[1])
+        elif node.op.name=='nn.max_pool2d':
+            return relay.nn.max_pool2d(args[0])
+        else:
+            return False
+
+
 class Model(HybridBlock):
     def __init__(self, **kwargs):
         super(Model, self).__init__(**kwargs)
-        # use name_scope to give child Blocks appropriate names.
-        # with self.name_scope():
-        # self.bn1 = nn.BatchNorm()
-        # self.bn2 = nn.BatchNorm()
-        # self.conv0 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(256))
-        # self.conv1 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        # self.conv2 = nn.Conv2D(16, 3, use_bias=True)# + mx.nd.random.uniform(-1.0, 1.0, shape=(512))
-        # self.conv3 = nn.Conv2D(16, 3, use_bias=True)
         self.relu = nn.Activation('relu')
         self.conv0 = nn.Conv2D(64, 7, use_bias=False, strides=(2, 2), padding=(3,3))
         self.bn0 = nn.BatchNorm()
         self.maxpool = nn.MaxPool2D((3,3), (2,2), (1,1))
         self.conv1 = nn.Conv2D(64, 1, use_bias=True)
         self.bn1 = nn.BatchNorm()
-        self.conv2 = nn.Conv2D(64, 3, use_bias=False)
+        self.conv2 = nn.Conv2D(64, 3, use_bias=False, padding=(1, 1))
         self.bn2 = nn.BatchNorm()
         self.conv3 = nn.Conv2D(256, 1, use_bias=True)
         self.bn3 = nn.BatchNorm()
 
+        self.conv11 = nn.Conv2D(256, 1, use_bias=False)
+        self.bn11 = nn.BatchNorm()
+
+
     def hybrid_forward(self, F, x):
-        # # x = self.bn1(x)
-        # x = self.relu(self.conv0(x))
-        # x1 = self.relu(self.conv1(x))
-        # x2 = self.relu(self.conv2(x))
-        # x3 = self.bn2(self.conv3(x))
-        # return x1+x2+x3
         x = self.relu(self.bn0(self.conv0(x)))
-        x = self.maxpool(x)
-        x = self.relu(self.bn1(self.conv1(x)))
+        x_ = self.maxpool(x)
+        x = self.relu(self.bn1(self.conv1(x_)))
         x = self.relu(self.bn2(self.conv2(x)))
-        x = self.relu(self.bn3(self.conv3(x)))
+        x = self.bn3(self.conv3(x))
+        x = self.relu(x + self.bn11(self.conv11(x_)))
         return x
 
 def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
@@ -148,7 +220,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     model.initialize(ctx=ctx)
     sample_for_mxnet = mx.ndarray.array(sample)
     output = model(sample_for_mxnet)
-    print("mxnet output:{}".format(output))
+    # print("mxnet output:{}".format(output))
 
 
     mod, params = relay.frontend.from_mxnet(model, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
@@ -156,9 +228,19 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     # desired_layouts = {"nn.conv2d": ["NCHW8c", "OIHW8o8i"], "nn.batch_norm": ["NCHW8c", "OIHW8o8i"]}#, "nn.bias_add": ["NCHW8c", "OIHW8o8i"]}
     seq = tvm.transform.Sequential(
         [
-            # relay.transform.CanonicalizeOps(),
+            relay.transform.CanonicalizeOps(),
             # relay.transform.SimplifyInference(),
             # relay.transform.FoldScaleAxis(),
+            # relay.transform.SimplifyExpr(),
+            relay.transform.InferType(),
+            relay.transform.SimplifyInference(),
+            relay.transform.FoldConstant(),
+            relay.transform.FoldScaleAxis(),
+            # tvm.transform.PrintIR(),
+
+            CustomPipeline(),
+            # relay.transform.FoldConstant(),
+            tvm.transform.PrintIR(),
 
             transform.AlterOpLayout(),
             # tvm.transform.PrintIR(),
@@ -167,12 +249,13 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
+            # tvm.transform.PrintIR(),
             
         ]
     )
-
-    # if params:
-    #     mod["main"] = bind_params_by_name(mod["main"], params)
+    
+    if params:
+        mod["main"] = bind_params_by_name(mod["main"], params)
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):#compile the graph x, instruments=[PrintIR()]
         graph, lib, param = tvm.relay.build(seq(mod), target="llvm", params=params)
     lib = update_lib(lib)
@@ -183,7 +266,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     # print(tvm_output.shape)
-    print("tvm output:{}".format(tvm_output))
+    # print("tvm output:{}".format(tvm_output))
     # for i in range(batches+warmup):
     #     if i == warmup:
     #         tic = time.time()
@@ -191,4 +274,4 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     # with_fuse_ms = (time.time() - tic) / (batches) * 1000
     # print("{}: with_fuse_ms: {:.4f} ms".format("net_with_branches", with_fuse_ms))
 
-benchmark(batch_size=128)
+benchmark(batch_size=1)
