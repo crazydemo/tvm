@@ -137,6 +137,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Relu(nid);
         } else if ("add" == op_name) {
           Add(nid);
+        } else if ("concatenate" == op_name) {
+          Concat(nid);
+        } else if ("nn.max_pool2d" == op_name) {
+          MaxPool2d(nid);
+        } else if ("nn.avg_pool2d" == op_name) {
+          AvgPool2d(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -548,6 +554,213 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_args_.push_back({{DNNL_ARG_SRC_0, data_memories[0]},
                          {DNNL_ARG_SRC_1, data_memories[1]},
                          {DNNL_ARG_DST, out_memory}});
+  }
+
+void Concat(const size_t& nid) {
+    auto node = nodes_[nid];
+
+    std::vector<dnnl::memory::desc> data_mds;
+    std::vector<dnnl::memory> data_memories;
+    
+    auto data_entry = node.GetInputs()[0];
+    dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    int axis = std::stoi(node.GetAttr<std::vector<std::string>>("axis")[0]); // axis
+    
+    if (axis < 0) {
+        ICHECK_LE(0 - axis, shape.size());
+        axis = shape.size() + axis;
+    }
+    else ICHECK_LT(axis, shape.size());
+    
+    for (auto entry : node.GetInputs()) {
+      auto data_shape = nodes_[entry.id_].GetOpShape()[entry.index_];
+      dnnl::memory::desc data_md = GenDNNLMemDescByShape(data_shape, dt::f32);
+
+      data_mds.push_back(data_md);
+      data_memories.push_back(BindDNNLMemory(entry, data_md));
+    }
+    
+    auto concat_prim_desc = dnnl::concat::primitive_desc(axis, data_mds, engine_);
+
+    auto concat = dnnl::concat(concat_prim_desc);
+    net_.push_back(concat);
+    
+    auto out_md = concat_prim_desc.dst_desc();
+    JSONGraphNodeEntry out_entry(nid, 0);
+    auto out_memory = BindDNNLMemory(out_entry, out_md);
+
+    std::unordered_map<int, dnnl::memory> args;
+    for (int i = 0; i < (int)data_memories.size(); i++) {
+        args.insert({DNNL_ARG_MULTIPLE_SRC + i, data_memories[i]});
+    }
+    args.insert({DNNL_ARG_DST, out_memory});
+    net_args_.push_back(args);
+  }
+  
+  void MaxPool2d(const size_t& nid) {
+    auto node = nodes_[nid];
+
+    // Setup attributes.
+    auto data_entry = node.GetInputs()[0];
+    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    dnnl::memory::dim pool_size0 = std::stoi(node.GetAttr<std::vector<std::string>>("pool_size")[0]); //notice
+    dnnl::memory::dim pool_size1 = std::stoi(node.GetAttr<std::vector<std::string>>("pool_size")[1]);
+    std::vector<std::string> str_strides = node.GetAttr<std::vector<std::string>>("strides");
+    std::vector<std::string> str_padding = node.GetAttr<std::vector<std::string>>("padding");
+    std::vector<std::string> ceil_mode = node.GetAttr<std::vector<std::string>>("ceil_mode");
+    dnnl::memory::dim dilation0 = std::stoi(node.GetAttr<std::vector<std::string>>("dilation")[0]);
+    dnnl::memory::dim dilation1 = std::stoi(node.GetAttr<std::vector<std::string>>("dilation")[1]);
+    auto src_df = layout_dict[node.GetAttr<std::vector<std::string>>("layout")[0]];
+    auto dst_df = src_df;
+    dnnl::memory::dim N = input_shape[0],
+      IC = input_shape[1],
+      IH = input_shape[2],
+      IW = input_shape[2],
+      KH = pool_size0,
+      KW = pool_size1,
+      PH_L = std::stoi(str_padding[1]),
+      PH_R = std::stoi(str_padding[3]),
+      PW_L = std::stoi(str_padding[0]),
+      PW_R = std::stoi(str_padding[2]),
+      SH = std::stoi(str_strides[0]),
+      SW = std::stoi(str_strides[1]),
+      DH = dilation0,
+      DW = dilation1,
+      OH = (IH - KH + PH_L + PH_R) / SH + 1,
+      OW = (IW - KW + PW_L + PW_R) / SW + 1;
+
+    if(node.GetAttr<std::vector<std::string>>("layout")[0].size()>4)
+      {
+        IC = input_shape[1]*input_shape[4];                    // input channels
+    }
+    // Correctness:
+    /* bool ceil_mode = node.GetAttr<bool>("ceil_mode");
+    if(ceil_mode) {
+      std::cout << "# Using ceiling mode;" << std::endl;
+    }
+    std::cout << "# Checking ceil_mode, poolsize, dilation: " << std::endl;*/
+
+    // Memory shapes.
+    dnnl::memory::dims src_dims = {N, IC, IH, IW};
+    //dnnl::memory::dims kernel_dims = {OC, IC, KH, KW};
+    dnnl::memory::dims kernel_dims = {KH, KW}; // modified
+    dnnl::memory::dims dst_dims = {N, IC, OH, OW};
+    dnnl::memory::dims strides_dims = {SH, SW};
+    dnnl::memory::dims padding_dims_l = {PH_L, PW_L};
+    dnnl::memory::dims padding_dims_r = {PH_R, PW_R};
+    dnnl::memory::dims dilation = {DH, DW};
+
+    // Memory descriptions.
+    auto pool_src_md = dnnl::memory::desc(src_dims, dt::f32, src_df);
+    auto pool_dst_md = dnnl::memory::desc(dst_dims, dt::f32, dst_df);
+
+    // MaxPool2d description.
+    // prop_kind, alg_kind, src_desc, dst_desc,
+    // strides, kernel, padding_l, padding_r
+    auto maxpool_desc = dnnl::pooling_forward::desc(
+      dnnl::prop_kind::forward_inference, dnnl::algorithm::pooling_max,
+      pool_src_md, pool_dst_md, strides_dims, kernel_dims,
+      padding_dims_l, padding_dims_r
+    );
+    auto maxpool_prim_desc = dnnl::pooling_forward::primitive_desc(maxpool_desc, engine_);
+
+    // Push to the network.
+    auto pool = dnnl::pooling_forward(maxpool_prim_desc);
+    net_.push_back(pool);
+
+    // Memories.
+    // ICHECK_EQ(node.GetAttr<std::vector<std::string>>("layout")[0], "NCHW");
+    auto pool2d_src_memory = BindDNNLMemory(data_entry, pool_src_md);
+
+    JSONGraphNodeEntry out_entry(nid, 0);
+    ICHECK(pool_dst_md == maxpool_prim_desc.dst_desc());
+    auto pool2d_dst_memory = BindDNNLMemory(out_entry, maxpool_prim_desc.dst_desc());
+
+    // Bind memory buffers.
+    net_args_.push_back({
+      {DNNL_ARG_SRC, pool2d_src_memory},
+      {DNNL_ARG_DST, pool2d_dst_memory}
+    });
+  }
+
+  void AvgPool2d(const size_t& nid){
+    auto node = nodes_[nid];
+
+    // Setup attributes.
+    auto data_entry = node.GetInputs()[0];
+    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    dnnl::memory::dim pool_size0 = std::stoi(node.GetAttr<std::vector<std::string>>("pool_size")[0]); //notice
+    dnnl::memory::dim pool_size1 = std::stoi(node.GetAttr<std::vector<std::string>>("pool_size")[1]);
+    std::vector<std::string> str_strides = node.GetAttr<std::vector<std::string>>("strides");
+    std::vector<std::string> str_padding = node.GetAttr<std::vector<std::string>>("padding");
+    std::vector<std::string> ceil_mode = node.GetAttr<std::vector<std::string>>("ceil_mode");
+    dnnl::memory::dim dilation0 = std::stoi(node.GetAttr<std::vector<std::string>>("dilation")[0]);
+    dnnl::memory::dim dilation1 = std::stoi(node.GetAttr<std::vector<std::string>>("dilation")[1]);
+
+    // Attributes related to AvgPool
+    // bool count_include_pad = node.GetAttr<bool>("count_include_pad");
+    // std::cout << "# count_include_pad or not?" << std::endl; // debug purpose
+    // std::cout << node.GetAttr<std::vector<std::string>>("count_include_pad")[0] << std::endl;
+    int int_countpad = std::stoi(node.GetAttr<std::vector<std::string>>("count_include_pad")[0]); //notice
+    bool count_include_pad = int_countpad != 0 ? true : false;
+    auto alg_kind = count_include_pad ?
+      dnnl::algorithm::pooling_avg_include_padding :
+      dnnl::algorithm::pooling_avg_exclude_padding ;
+
+    dnnl::memory::dim N = input_shape[0],
+      IC = input_shape[1],
+      IH = input_shape[2],
+      IW = input_shape[2],
+      KH = pool_size0,
+      KW = pool_size1,
+      PH_L = std::stoi(str_padding[1]),
+      PH_R = std::stoi(str_padding[3]),
+      PW_L = std::stoi(str_padding[0]),
+      PW_R = std::stoi(str_padding[2]),
+      SH = std::stoi(str_strides[0]),
+      SW = std::stoi(str_strides[1]),
+      DH = dilation0,
+      DW = dilation1,
+      OH = (IH - KH + PH_L + PH_R) / SH + 1,
+      OW = (IW - KW + PW_L + PW_R) / SW + 1;
+
+    // Memory shapes.
+    dnnl::memory::dims src_dims = {N, IC, IH, IW};
+    dnnl::memory::dims kernel_dims = {KH, KW};
+    dnnl::memory::dims dst_dims = {N, IC, OH, OW};
+    dnnl::memory::dims strides_dims = {SH, SW};
+    dnnl::memory::dims padding_dims_l = {PH_L, PW_L};
+    dnnl::memory::dims padding_dims_r = {PH_R, PW_R};
+    dnnl::memory::dims dilation = {DH, DW};
+
+    // Memory descriptions.
+    auto pool_src_md = dnnl::memory::desc(input_shape, dt::f32, tag::nchw);
+    auto pool_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::nchw); 
+
+    // AvgPool2d description.
+    auto avgpool_desc = dnnl::pooling_forward::desc(
+      dnnl::prop_kind::forward_inference, alg_kind, pool_src_md,
+      pool_dst_md, strides_dims, kernel_dims,
+      padding_dims_l, padding_dims_r
+    );
+    auto avgpool_prim_desc = dnnl::pooling_forward::primitive_desc(avgpool_desc, engine_, true);//allow_enpty=true
+
+    // Push to the network.
+    auto pool = dnnl::pooling_forward(avgpool_prim_desc);
+    net_.push_back(pool);
+
+    // Memories
+    ICHECK_EQ(node.GetAttr<std::vector<std::string>>("layout")[0], "NCHW"); // naming
+    auto pool2d_src_memory = BindDNNLMemory(data_entry, pool_src_md);
+
+    JSONGraphNodeEntry out_entry(nid, 0);
+    auto pool2d_dst_memory = BindDNNLMemory(out_entry, avgpool_prim_desc.dst_desc());
+
+    // Bind memory buffers.
+    net_args_.push_back({
+      {DNNL_ARG_SRC, pool2d_src_memory},
+      {DNNL_ARG_DST, pool2d_dst_memory}
+    });
   }
 
   // Read from DNNL memory (+offset) and write to the handle.

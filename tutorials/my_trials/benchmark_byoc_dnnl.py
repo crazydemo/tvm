@@ -260,8 +260,8 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         #     # out.wait_to_read()
         # with_fuse_fps = batches * batch_size / (time.time() - tic)
         # print("{}: with_fuse_ms: {:.4f} ms".format(model_name, with_fuse_fps))
-        # tvm_output = rt_mod.get_output(0)
-        # print(tvm_output)
+        tvm_output = rt_mod.get_output(0)
+        print(tvm_output)
         
 
 benchmark(batch_size=1)

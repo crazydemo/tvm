@@ -1,4 +1,4 @@
-f1 = open("/home/zy/tvm/tutorials/experiment_res/byoc_trace_0349.txt","r")
+f1 = open("/home/zy/tvm/tutorials/experiment_res/0812_trace.txt","r")
 # f2 = open("/home/zy/tvm/tutorials/experiment_res/byoc_trace.txt","r")
 
 # # 读取两个txt文件
@@ -17,7 +17,7 @@ txt1 = f1.readlines()
 # line2 = txt2.split()
 
 # 以读取方式打开 diff.txt 文件
-outfile = open("/home/zy/tvm/tutorials/experiment_res/processed_byoc_trace_0349_5.txt", "w")
+outfile = open("/home/zy/tvm/tutorials/experiment_res/processed_0812_trace.txt", "w")
 
 # 循环遍历1号文件中的元素
 
@@ -25,7 +25,9 @@ for line in txt1:
 	if "importlib" not in line and "packed_func.py" not in line and "task.py" not in line and "object.py" not in line and "abc.py" not in line and \
     "decoder.py" not in line and "record.py" not in line and "space.py" not in line and "fromnumeric.py" not in line and \
         "_methods.py" not in line and "__init__" not in line and "---" not in line \
-        and "base.py" not in line and "registry.py" not in line and "pathlib.py" not in line:
+        and "base.py" not in line and "registry.py" not in line and "pathlib.py" not in line \
+            and "hashlib.py" not in line and "_endian.py" not in line and "platform.py" not in line \
+                and "re.py" not in line and "sre_parse.py" not in line:
 
 		outfile.write(line)
     
