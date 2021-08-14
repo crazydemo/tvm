@@ -115,15 +115,17 @@ class CustomPipeline:
 
     def rewrite_graph(self):
         # print(max(obj.merge_dict.keys()))
-        for i in range(max(self.merge_dict.keys()), -1, -1):
+        start = max(self.merge_dict.keys())
+        new_node = self.op_lst[start+1]
+        for i in range(start, -1, -1):
             cur_node = self.op_lst[i]
             if i in self.merge_dict.keys():
-                new_node = self.get_op(cur_node, cur_node.args[0], self.merge_dict[i])
+                new_node = self.get_op(cur_node, new_node, self.merge_dict[i])
             else:
                 if cur_node.op.name=="add":
                     new_node = self.get_op(cur_node, new_node, cur_node.args[1])
                 elif cur_node.op.name=="nn.conv2d":
-                    new_node = self.get_op(cur_node, new_node, cur_node.args[1])
+                    new_node = self.get_op(cur_node, new_node, cur_node.args[1], cur_node.attrs)
                     # print(new_node.op.name)
                 else:
                     new_node = self.get_op(cur_node, new_node)
@@ -160,6 +162,8 @@ class CustomPipeline:
     
     def get_op(self, node, *args):
         if node.op.name=='nn.conv2d':
+            if node.args[1].data.shape[-1]==3:
+                return relay.nn.conv2d(args[0], args[1], padding=(1, 1))
             return relay.nn.conv2d(args[0], args[1])
         elif node.op.name=='nn.relu':
             return relay.nn.relu(args[0])
@@ -239,8 +243,8 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
             # tvm.transform.PrintIR(),
 
             CustomPipeline(),
-            # relay.transform.FoldConstant(),
-            tvm.transform.PrintIR(),
+            relay.transform.FoldConstant(),
+            # tvm.transform.PrintIR(),
 
             transform.AlterOpLayout(),
             # tvm.transform.PrintIR(),
