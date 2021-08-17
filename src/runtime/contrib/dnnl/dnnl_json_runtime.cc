@@ -192,10 +192,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // std::cout<<node.GetAttr<std::vector<std::string>>("kernel_layout")[0]<<std::endl;
     auto src_df = layout_dict[node.GetAttr<std::vector<std::string>>("data_layout")[0]];
     auto weight_df = layout_dict[node.GetAttr<std::vector<std::string>>("kernel_layout")[0]];
-    auto dst_df = layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
+    auto dst_df = src_df;
 
-    // if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI8o")
-    // {dst_df = layout_dict["NCHW8c"];}
+    if(node.GetAttr<std::vector<std::string>>("out_layout")[0].size()!=0){
+      dst_df = layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
+    }
     
     // for (auto in: input_shape)
     // {
@@ -204,7 +205,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // std::cout<<std::endl;
 
-    // std::cout<<weight_shape.size()<<' '<<std::endl;
+    // std::cout<<node.GetAttr<std::vector<std::string>>("out_layout")[0].size()<<std::endl;
 
     // for (auto in: weight_shape)
     // {

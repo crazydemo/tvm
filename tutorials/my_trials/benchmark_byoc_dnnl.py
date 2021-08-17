@@ -47,7 +47,6 @@ class CustomPipeline:
         self.branch_dict = {}
         self.block_dict = {}
         self.op_lst = []
-        self.tmp_block = []
 
     # This function can define a pass.
     def transform_function(self, func, mod, ctx):
@@ -75,10 +74,14 @@ class CustomPipeline:
                     tmp_new_node = self.get_op(tmp_cur_node, tmp_new_node, tmp_cur_node.args[1])
                 new_node = self.get_op(cur_node, new_node, tmp_new_node)
 
+            elif i in self.merge_dict.keys():
+                new_node = self.get_op(cur_node, new_node, self.merge_dict[i])
+
             elif cur_node.op.name=="add":
                 new_node = self.get_op(cur_node, new_node, cur_node.args[1])
             elif cur_node.op.name=="nn.conv2d":
                 new_node = self.get_op(cur_node, new_node, cur_node.args[1], cur_node.attrs)
+                # return new_node
             elif cur_node.op.name=="nn.dense":
                 new_node = self.get_op(cur_node, new_node, cur_node.args[1])
             elif cur_node.op.name=="nn.batch_flatten":
@@ -97,15 +100,14 @@ class CustomPipeline:
                 if self.check_block(node):
                     self.block_dict[self.cnt] = node
                 
-                if self.check_consecutive_add(node):
+                elif self.check_consecutive_add(node):
                     a1 = node
                     a2 = a1.args[0]
                     data = relay.add(a1.args[1], a2.args[1])
                     self.merge_dict[self.cnt] = data
-                    # print(obj.cnt)
                     node = a2
 
-                if self.check_branch(node):
+                elif self.check_branch(node):
                     tmp_node = node.args[1]
                     self.branch_lst = [tmp_node]
                     while (not self.check_block(tmp_node)):
@@ -148,14 +150,24 @@ class CustomPipeline:
 
     def get_op(self, node, *args):
         if node.op.name=='nn.conv2d':
-            # print(node.args[1].data.shape)
+            shape = node.args[1].data.shape
+            # print(shape)
+            if len(shape)==4:
+                channels = shape[0]
+                kernel_size = shape[-1]
+            elif len(shape)==5:
+                channels = shape[0] * shape[-1]
+                kernel_size = shape[-2]
+            elif len(shape)==6:
+                channels = shape[0] * shape[-1]
+                kernel_size = shape[-3]
             if node.args[1].data.shape[-1]==3:
-                return relay.nn.conv2d(args[0], args[1], padding=(1, 1))
+                return relay.nn.conv2d(args[0], args[1], padding=(1, 1), channels=channels, kernel_size=kernel_size)
             elif node.args[1].data.shape[-1]==1 and node.args[1].data.shape[1]/node.args[1].data.shape[0]==2:
-                return relay.nn.conv2d(args[0], args[1], strides=(2, 2))
+                return relay.nn.conv2d(args[0], args[1], strides=(2, 2), channels=channels, kernel_size=kernel_size)
             elif node.args[1].data.shape[-1]==1 and node.args[1].data.shape[0]/node.args[1].data.shape[1]==2:
-                return relay.nn.conv2d(args[0], args[1], strides=(2, 2))
-            return relay.nn.conv2d(args[0], args[1])
+                return relay.nn.conv2d(args[0], args[1], strides=(2, 2), channels=channels, kernel_size=kernel_size)
+            return relay.nn.conv2d(args[0], args[1], channels=channels, kernel_size=kernel_size)
         elif node.op.name=='nn.relu':
             return relay.nn.relu(args[0])
         elif node.op.name=='add':
@@ -253,9 +265,13 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         seq = tvm.transform.Sequential(
             [
                 relay.transform.CanonicalizeOps(),
+                # relay.transform.SimplifyInference(),
+                # relay.transform.FoldScaleAxis(),
+                # relay.transform.SimplifyExpr(),
+                relay.transform.InferType(),
                 relay.transform.SimplifyInference(),
+                relay.transform.FoldConstant(),
                 relay.transform.FoldScaleAxis(),
-                relay.transform.SimplifyExpr(),
 
                 CustomPipeline(),
                 relay.transform.FoldConstant(),
@@ -276,7 +292,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
 
         if params:
             mod["main"] = bind_params_by_name(mod["main"], params)
-        with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):# 
+        with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
         # print(json)
@@ -298,7 +314,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         # with_fuse_fps = batches * batch_size / (time.time() - tic)
         # print("{}: with_fuse_ms: {:.4f} ms".format(model_name, with_fuse_fps))
         tvm_output = rt_mod.get_output(0)
-        # print(tvm_output)
+        print(tvm_output)
         
 
 benchmark(batch_size=1)

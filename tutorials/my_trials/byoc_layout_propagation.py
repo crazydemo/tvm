@@ -281,7 +281,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     model.initialize(ctx=ctx)
     sample_for_mxnet = mx.ndarray.array(sample)
     output = model(sample_for_mxnet)
-    # print("mxnet output:{}".format(output))
+    print("mxnet output:{}".format(output))
 
 
     mod, params = relay.frontend.from_mxnet(model, shape={"data": input_shape}, dtype="float32")#port the Gluon model to a portable computational graph
@@ -306,11 +306,11 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
             transform.AlterOpLayout(),
             # tvm.transform.PrintIR(),
             # transform.ConvertLayout(desired_layouts),
-            transform.MergeComposite(pattern_table()),
+            # transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
-            tvm.transform.PrintIR(),
+            # tvm.transform.PrintIR(),
             
         ]
     )
@@ -327,7 +327,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     # print(tvm_output.shape)
-    # print("tvm output:{}".format(tvm_output))
+    print("tvm output:{}".format(tvm_output))
     # for i in range(batches+warmup):
     #     if i == warmup:
     #         tic = time.time()
