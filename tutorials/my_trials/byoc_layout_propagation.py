@@ -104,7 +104,10 @@ class CustomPipeline:
         # self.multiplier = multiplier
         self.cnt = 0
         self.merge_dict = {}
+        self.branch_dict = {}
+        self.block_dict = {}
         self.op_lst = []
+        self.tmp_block = []
 
     # This function can define a pass.
     def transform_function(self, func, mod, ctx):
@@ -114,30 +117,45 @@ class CustomPipeline:
         return res
 
     def rewrite_graph(self):
-        # print(max(obj.merge_dict.keys()))
-        start = max(self.merge_dict.keys())
-        new_node = self.op_lst[start+1]
-        for i in range(start, -1, -1):
+        start = max(self.block_dict.keys())
+        new_node = self.op_lst[start]
+        cur_node = self.op_lst[start]
+        for i in range(start-1, -1, -1):
+            
             cur_node = self.op_lst[i]
-            if i in self.merge_dict.keys():
+
+            if i+1 in self.block_dict.keys():
+                node_for_next_block = new_node
+                # print(node_for_next_block.op.name)
+                # if i+1 in self.branch_dict.keys():
+                #     self.branch_dict[i+1][-1] = node_for_next_block
+            
+            if i in self.branch_dict.keys():
+                branch_lst = self.branch_dict[i]
+                tmp_new_node = node_for_next_block
+                for j in range(len(branch_lst)-2, -1, -1):
+                    tmp_cur_node = branch_lst[j]
+                    tmp_new_node = self.get_op(tmp_cur_node, tmp_new_node, tmp_cur_node.args[1])
+                new_node = self.get_op(cur_node, new_node, tmp_new_node)
+
+            elif i in self.merge_dict.keys():
                 new_node = self.get_op(cur_node, new_node, self.merge_dict[i])
+            
+            elif cur_node.op.name=="add":
+                new_node = self.get_op(cur_node, new_node, cur_node.args[1])
+            elif cur_node.op.name=="nn.conv2d":
+                new_node = self.get_op(cur_node, new_node, cur_node.args[1], cur_node.attrs)
             else:
-                if cur_node.op.name=="add":
-                    new_node = self.get_op(cur_node, new_node, cur_node.args[1])
-                elif cur_node.op.name=="nn.conv2d":
-                    new_node = self.get_op(cur_node, new_node, cur_node.args[1], cur_node.attrs)
-                    # print(new_node.op.name)
-                else:
-                    new_node = self.get_op(cur_node, new_node)
-                    # return new_node
-                    # if i==4:
-                    #     return new_node
+                new_node = self.get_op(cur_node, new_node)
             print(new_node.op.name)
         return new_node
 
     def merge_consecutive_add(self, node):
         while node:
             try:
+                if self.check_block(node):
+                    self.block_dict[self.cnt] = node
+                
                 if self.check_consecutive_add(node):
                     a1 = node
                     a2 = a1.args[0]
@@ -145,6 +163,15 @@ class CustomPipeline:
                     self.merge_dict[self.cnt] = data
                     # print(obj.cnt)
                     node = a2
+
+                if self.check_branch(node):
+                    tmp_node = node.args[1]
+                    self.branch_lst = [tmp_node]
+                    while (not self.check_block(tmp_node)):
+                        tmp_node = tmp_node.args[0]
+                        self.branch_lst.append(tmp_node)
+                    self.branch_dict[self.cnt] = self.branch_lst
+                
                 # print(node.op.name)
                 self.op_lst.append(node)
                 node = node.args[0]
@@ -155,8 +182,25 @@ class CustomPipeline:
 
     def check_consecutive_add(self, node):
         try:
-            # print("check ...")
             return node.op.name=='add' and len(node.type_args[1].shape)==3 and node.args[0].op.name=='add' and len(node.args[0].type_args[1].shape)==3
+        except:
+            return False
+    
+    def check_block(self, node):
+        try:
+            return (node.op.name=='nn.relu' and not self.check_constant(node.args[0].args[1])) or node.op.name=='nn.max_pool2d'
+        except:
+            return False
+
+    def check_branch(self, node):
+        try:
+            return node.op.name=='add' and not self.check_constant(node.args[1])
+        except:
+            return False
+
+    def check_constant(self, node):
+        try:
+            return 'Constant' in str(type(node))
         except:
             return False
     
@@ -170,7 +214,7 @@ class CustomPipeline:
         elif node.op.name=='add':
             return relay.add(args[0], args[1])
         elif node.op.name=='nn.max_pool2d':
-            return relay.nn.max_pool2d(args[0])
+            return relay.nn.max_pool2d(args[0], (3, 3), (2, 2), padding=(1, 1))
         else:
             return False
 
@@ -192,6 +236,13 @@ class Model(HybridBlock):
         self.conv11 = nn.Conv2D(256, 1, use_bias=False)
         self.bn11 = nn.BatchNorm()
 
+        self.conv21 = nn.Conv2D(64, 1, use_bias=True)
+        self.bn21 = nn.BatchNorm()
+        self.conv22 = nn.Conv2D(64, 3, use_bias=False, padding=(1, 1))
+        self.bn22 = nn.BatchNorm()
+        self.conv23 = nn.Conv2D(256, 1, use_bias=True)
+        self.bn23 = nn.BatchNorm()
+
 
     def hybrid_forward(self, F, x):
         x = self.relu(self.bn0(self.conv0(x)))
@@ -199,7 +250,13 @@ class Model(HybridBlock):
         x = self.relu(self.bn1(self.conv1(x_)))
         x = self.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
-        x = self.relu(x + self.bn11(self.conv11(x_)))
+        x_ = self.relu(x + self.bn11(self.conv11(x_)))
+
+        x = self.relu(self.bn21(self.conv21(x_)))
+        x = self.relu(self.bn22(self.conv22(x)))
+        x = self.bn23(self.conv23(x))
+
+        x = self.relu(x + x_)
         return x
 
 def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
@@ -253,7 +310,7 @@ def benchmark(batch_size=1, batches=10, warmup=2, cin=3):
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
-            # tvm.transform.PrintIR(),
+            tvm.transform.PrintIR(),
             
         ]
     )

@@ -36,7 +36,7 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
-@relay.transform.function_pass(opt_level=3)
+@relay.transform.function_pass(opt_level=1)
 class CustomPipeline:
     """Simple test function to replace one argument to another."""
 
@@ -44,56 +44,59 @@ class CustomPipeline:
         # self.multiplier = multiplier
         self.cnt = 0
         self.merge_dict = {}
+        self.branch_dict = {}
+        self.block_dict = {}
         self.op_lst = []
+        self.tmp_block = []
 
     # This function can define a pass.
     def transform_function(self, func, mod, ctx):
-        # obj = self
-        class ReplaceConstant(tvm.relay.ExprMutator):
-            # def rewrite(self, func):
-            #     node = self.visit_call(func)
-            #     self.merge_consecutive_add(node.body)
-            #     res = self.rewrite_graph()
-            #     res = relay.Function([obj.op_lst[-1]], res)
-            #     return res
-
-            def visit_call(self, c):
-                # self.merge_consecutive_add(c)
-                # res = self.rewrite_graph()
-                # res = relay.Function([obj.op_lst[-1]], res)
-                return c
-        node = ReplaceConstant().visit(func)
-        self.merge_consecutive_add(node.body)
+        self.merge_consecutive_add(func.body)
         res = self.rewrite_graph()
         res = relay.Function([self.op_lst[-1]], res)
-        res = ReplaceConstant().visit(res)
         return res
 
     def rewrite_graph(self):
-        # print(max(obj.merge_dict.keys()))
-        for i in range(max(self.merge_dict.keys()), -1, -1):
+        start = max(self.block_dict.keys())
+        new_node = self.op_lst[start]
+        cur_node = self.op_lst[start]
+        for i in range(start-1, -1, -1):
+            
             cur_node = self.op_lst[i]
-            if i in self.merge_dict.keys():
-                new_node = self.get_op(cur_node, cur_node.args[0], self.merge_dict[i])
+
+            if i+1 in self.block_dict.keys():
+                node_for_next_block = new_node
+            
+            if i in self.branch_dict.keys():
+                branch_lst = self.branch_dict[i]
+                tmp_new_node = node_for_next_block
+                for j in range(len(branch_lst)-2, -1, -1):
+                    tmp_cur_node = branch_lst[j]
+                    tmp_new_node = self.get_op(tmp_cur_node, tmp_new_node, tmp_cur_node.args[1])
+                new_node = self.get_op(cur_node, new_node, tmp_new_node)
+
+            elif cur_node.op.name=="add":
+                new_node = self.get_op(cur_node, new_node, cur_node.args[1])
+            elif cur_node.op.name=="nn.conv2d":
+                new_node = self.get_op(cur_node, new_node, cur_node.args[1], cur_node.attrs)
+            elif cur_node.op.name=="nn.dense":
+                new_node = self.get_op(cur_node, new_node, cur_node.args[1])
+            elif cur_node.op.name=="nn.batch_flatten":
+                new_node = self.get_op(cur_node, new_node)
             else:
-                if cur_node.op.name=="add":
-                    new_node = self.get_op(cur_node, new_node, cur_node.args[1])
-                elif cur_node.op.name=="nn.conv2d":
-                    new_node = self.get_op(cur_node, new_node, cur_node.args[1])
-                elif cur_node.op.name=="nn.dense":
-                    new_node = self.get_op(cur_node, new_node, cur_node.args[1])
-                elif cur_node.op.name=="nn.ba":
-                    new_node = self.get_op(cur_node, new_node)
-                else:
-                    new_node = self.get_op(cur_node, new_node)
-                    # if i==4:
-                    #     return new_node
-            print(new_node.op.name, i)
+                new_node = self.get_op(cur_node, new_node)
+                # return new_node
+                # if i==4:
+                #     return new_node
+        # print(new_node.op.name)
         return new_node
 
     def merge_consecutive_add(self, node):
         while node:
             try:
+                if self.check_block(node):
+                    self.block_dict[self.cnt] = node
+                
                 if self.check_consecutive_add(node):
                     a1 = node
                     a2 = a1.args[0]
@@ -101,13 +104,22 @@ class CustomPipeline:
                     self.merge_dict[self.cnt] = data
                     # print(obj.cnt)
                     node = a2
+
+                if self.check_branch(node):
+                    tmp_node = node.args[1]
+                    self.branch_lst = [tmp_node]
+                    while (not self.check_block(tmp_node)):
+                        tmp_node = tmp_node.args[0]
+                        self.branch_lst.append(tmp_node)
+                    self.branch_dict[self.cnt] = self.branch_lst
+                
                 # print(node.op.name)
                 self.op_lst.append(node)
                 node = node.args[0]
                 self.cnt += 1
             except:
                 self.cnt = 0
-                break  
+                break
 
     def check_consecutive_add(self, node):
         try:
@@ -116,8 +128,33 @@ class CustomPipeline:
         except:
             return False
     
+    def check_block(self, node):
+        try:
+            return (node.op.name=='nn.relu' and not self.check_constant(node.args[0].args[1])) or node.op.name=='nn.max_pool2d'
+        except:
+            return False
+
+    def check_branch(self, node):
+        try:
+            return node.op.name=='add' and not self.check_constant(node.args[1])
+        except:
+            return False
+
+    def check_constant(self, node):
+        try:
+            return 'Constant' in str(type(node))
+        except:
+            return False
+
     def get_op(self, node, *args):
         if node.op.name=='nn.conv2d':
+            # print(node.args[1].data.shape)
+            if node.args[1].data.shape[-1]==3:
+                return relay.nn.conv2d(args[0], args[1], padding=(1, 1))
+            elif node.args[1].data.shape[-1]==1 and node.args[1].data.shape[1]/node.args[1].data.shape[0]==2:
+                return relay.nn.conv2d(args[0], args[1], strides=(2, 2))
+            elif node.args[1].data.shape[-1]==1 and node.args[1].data.shape[0]/node.args[1].data.shape[1]==2:
+                return relay.nn.conv2d(args[0], args[1], strides=(2, 2))
             return relay.nn.conv2d(args[0], args[1])
         elif node.op.name=='nn.relu':
             return relay.nn.relu(args[0])
@@ -220,8 +257,8 @@ def benchmark(batch_size=1, batches=10, warmup=2):
                 relay.transform.FoldScaleAxis(),
                 relay.transform.SimplifyExpr(),
 
-                # CustomPipeline(),
-                # relay.transform.FoldConstant(),
+                CustomPipeline(),
+                relay.transform.FoldConstant(),
                 # tvm.transform.PrintIR(),
                 # relay.transform.FuseOps(),
                 # tvm.transform.PrintIR(),
@@ -239,7 +276,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
 
         if params:
             mod["main"] = bind_params_by_name(mod["main"], params)
-        with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
+        with tvm.transform.PassContext(opt_level=3, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
         lib = update_lib(lib)
         # print(json)
@@ -261,7 +298,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         # with_fuse_fps = batches * batch_size / (time.time() - tic)
         # print("{}: with_fuse_ms: {:.4f} ms".format(model_name, with_fuse_fps))
         tvm_output = rt_mod.get_output(0)
-        print(tvm_output)
+        # print(tvm_output)
         
 
 benchmark(batch_size=1)
