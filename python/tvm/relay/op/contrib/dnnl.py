@@ -96,12 +96,25 @@ def make_dense_pattern(with_bias=True):
         dense_out = dense
     return dense_out
 
+def make_conv_add_sum_relu_pattern():
+    data1 = wildcard()
+    weight = wildcard()
+    bias = wildcard()
+    data2 = wildcard()
+    out = is_op("nn.conv2d")(data1, weight)
+    out = is_op("add")(out, bias)
+    out = is_op("add")(out, data2)
+    out = is_op("nn.relu")(out)
+    return out
+    
+
 
 @register_pattern_table("dnnl")
 def pattern_table():
+    conv2d_bias_sum_relu_pat = ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern())
     conv2d_bias_relu_pat = ("dnnl.conv2d_bias_relu", make_pattern(with_bias=True))
     # conv2d_relu_pat = ("dnnl.conv2d_relu", make_pattern(with_bias=False))
     conv2d_bias_pat = ("dnnl.conv2d_bias", make_pattern(with_bias=True, with_relu=False))
     dense_bias_pat = ("dnnl.dense_bias", make_dense_pattern(with_bias=True))
-    dnnl_patterns = [conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_pat]#conv2d_relu_pat
+    dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_pat]#conv2d_relu_pat, 
     return dnnl_patterns

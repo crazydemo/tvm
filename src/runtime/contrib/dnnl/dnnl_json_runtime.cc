@@ -127,6 +127,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Conv2d(nid, true, false);
         } else if ("dnnl.conv2d_bias_relu" == op_name) {
           Conv2d(nid, true, true);
+        } else if ("dnnl.conv2d_bias_sum_relu" == op_name) {
+          Conv2d(nid, true, true, true);
         } else if ("nn.dense" == op_name) {
           Dense(nid);
         } else if ("dnnl.dense_bias" == op_name) {
@@ -164,6 +166,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   dnnl::memory BindDNNLMemory(const JSONGraphNodeEntry& entry, dnnl::memory mem,
                               size_t offset = 0) {
     auto eid = EntryID(entry);
+    // std::cout<<eid<<std::endl;
     // Since the DNNL memory has been created before calling this function, we assume the entry
     // has not yet been bound to the other DNNL memory; otherwise it may have memory leak.
     ICHECK_EQ(entry_out_mem_.count(eid), 0);
@@ -177,7 +180,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     return entry_out_mem_[eid].first;
   }
 
-  void Conv2d(const size_t& nid, const bool has_relu = false, const bool has_bias = false) {
+  void Conv2d(const size_t& nid, const bool has_relu = false, const bool has_bias = false, const bool has_sum = false) {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -294,11 +297,15 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // Enable ReLU
     dnnl::primitive_attr attr;
-    if (has_relu) {
-      dnnl::post_ops ops;
-      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 0.f);
-      attr.set_post_ops(ops);
+    dnnl::post_ops ops;
+    if (has_sum) {
+      ops.append_sum(1.f, dt::f32);
     }
+    if (has_relu) {
+      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 0.f);
+    }
+    attr.set_post_ops(ops);
+    
 
     auto conv2d_prim_desc = dnnl::convolution_forward::primitive_desc(conv_desc, attr, engine_);
 
@@ -557,7 +564,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                          {DNNL_ARG_DST, out_memory}});
   }
 
-void Concat(const size_t& nid) {
+  void Concat(const size_t& nid) {
     auto node = nodes_[nid];
 
     std::vector<dnnl::memory::desc> data_mds;

@@ -22,8 +22,8 @@ from tvm.contrib.download import download_testdata
 from mxnet.gluon.model_zoo.vision import get_model
 from PIL import Image
 from matplotlib import pyplot as plt
-import tvm.contrib.graph_executor as graph_executor
-# from tvm.contrib.debugger import debug_executor as graph_executor
+# import tvm.contrib.graph_executor as graph_executor
+from tvm.contrib.debugger import debug_executor as graph_executor
 # 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
 model_dict = {'resnet50_v1': resnet}
@@ -183,29 +183,29 @@ class CustomPipeline:
         else:
             return False
 
-@relay.op.register_alter_op_layout("nn.conv2d", level=114)
-def alter_conv2d(attrs, inputs, tinfos, out_type):
-    data, weight = inputs
-    new_attrs = dict(attrs)
-    new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OHWI8o'
-    new_attrs['out_layout'] = 'NCHW8c'
-    try:
-        if weight.type_annotation.shape[1]>=8:
-            new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW8c'
-            return relay.nn.conv2d(data, weight, **new_attrs)
-    except:
-        if weight.data.shape[1]>=8:
-            new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW8c'
-            return relay.nn.conv2d(data, weight, **new_attrs)
-        return relay.nn.conv2d(data, weight, **new_attrs)
-    return relay.nn.conv2d(data, weight, **new_attrs)
+# @relay.op.register_alter_op_layout("nn.conv2d", level=114)
+# def alter_conv2d(attrs, inputs, tinfos, out_type):
+#     data, weight = inputs
+#     new_attrs = dict(attrs)
+#     new_attrs['data_layout'] = 'NCHW'
+#     new_attrs['kernel_layout'] = 'OHWI8o'
+#     new_attrs['out_layout'] = 'NCHW8c'
+#     try:
+#         if weight.type_annotation.shape[1]>=8:
+#             new_attrs = dict(attrs)
+#             new_attrs['data_layout'] = 'NCHW8c'
+#             new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
+#             new_attrs['out_layout'] = 'NCHW8c'
+#             return relay.nn.conv2d(data, weight, **new_attrs)
+#     except:
+#         if weight.data.shape[1]>=8:
+#             new_attrs = dict(attrs)
+#             new_attrs['data_layout'] = 'NCHW8c'
+#             new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
+#             new_attrs['out_layout'] = 'NCHW8c'
+#             return relay.nn.conv2d(data, weight, **new_attrs)
+#         return relay.nn.conv2d(data, weight, **new_attrs)
+#     return relay.nn.conv2d(data, weight, **new_attrs)
 
 def update_lib(lib):
     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
@@ -278,7 +278,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
                 # tvm.transform.PrintIR(),
                 # relay.transform.FuseOps(),
                 # tvm.transform.PrintIR(),
-                relay.transform.AlterOpLayout(),
+                # relay.transform.AlterOpLayout(),
                 # tvm.transform.PrintIR(),
                 # relay.transform.ConvertLayout(desired_layouts),
                 relay.transform.MergeComposite(pattern_table()),

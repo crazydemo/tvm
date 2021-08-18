@@ -446,6 +446,9 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
 
       if (name == "dnnl.conv2d_bias_relu") {
         call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv2d", "add", "nn.relu"});
+      } else if (name == "dnnl.conv2d_bias_sum_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 3, {"nn.conv2d", "add", "add", "nn.relu"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name == "dnnl.conv2d_relu") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d", "nn.relu"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
