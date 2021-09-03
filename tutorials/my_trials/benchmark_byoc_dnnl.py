@@ -23,7 +23,7 @@ from mxnet.gluon.model_zoo.vision import get_model
 from PIL import Image
 from matplotlib import pyplot as plt
 import tvm.contrib.graph_executor as graph_executor
-# from tvm.contrib.debugger import debug_executor as graph_executor
+#from tvm.contrib.debugger import debug_executor as graph_executor
 # 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
 model_dict = {'resnet50_v1': resnet}
@@ -188,21 +188,21 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     new_attrs = dict(attrs)
     new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OHWI8o'
-    new_attrs['out_layout'] = 'NCHW8c'
+    new_attrs['kernel_layout'] = 'OHWI16o'
+    new_attrs['out_layout'] = 'NCHW16c'
     try:
-        if weight.type_annotation.shape[1]>=8:
+        if weight.type_annotation.shape[1]>=16:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW8c'
+            new_attrs['data_layout'] = 'NCHW16c'
+            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
+            new_attrs['out_layout'] = 'NCHW16c'
             return relay.nn.conv2d(data, weight, **new_attrs)
     except:
-        if weight.data.shape[1]>=8:
+        if weight.data.shape[1]>=16:
             new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW8c'
-            new_attrs['kernel_layout'] = 'OIHW8i8o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW8c'
+            new_attrs['data_layout'] = 'NCHW16c'
+            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
+            new_attrs['out_layout'] = 'NCHW16c'
             return relay.nn.conv2d(data, weight, **new_attrs)
         return relay.nn.conv2d(data, weight, **new_attrs)
     return relay.nn.conv2d(data, weight, **new_attrs)
@@ -236,7 +236,7 @@ def transform_image(image):
     image = image[np.newaxis, :]
     return image
 
-def benchmark(batch_size=1, batches=10, warmup=2):
+def benchmark(batch_size=1, batches=100, warmup=10):
     img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
     img_name = "cat.png"
     img_path = download_testdata(img_url, img_name, module="data")
@@ -244,7 +244,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     sample = transform_image(image)
     # print("x", sample.shape)
     # np.random.seed(0)
-    # sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+    #sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
 
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = tvm.cpu()
@@ -300,21 +300,26 @@ def benchmark(batch_size=1, batches=10, warmup=2):
         
         rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
         rt_mod.set_input(**params)
+        #print("##############################################################")
         rt_mod.run()
 
         # out= rt_mod.debug_get_output("tvmgen_default_dnnl_0", out=tvm.nd.empty((1, 64, 112, 112), dtype="float32"))
         # print(out)
         # tvm_out = rt_mod.get_output(1, tvm.nd.empty((1, 1000), "float32")).numpy()
         # print(tvm_out)
-        # for i in range(batches+warmup):
-        #     if i == warmup:
-        #         tic = time.time()
-        #     out = rt_mod.run()
-        #     # out.wait_to_read()
-        # with_fuse_fps = batches * batch_size / (time.time() - tic)
-        # print("{}: with_fuse_ms: {:.4f} ms".format(model_name, with_fuse_fps))
-        # tvm_output = rt_mod.get_output(0)
-        # print(tvm_output)
         
-
+        for i in range(batches+warmup):
+            if i == warmup:
+                tic = time.time()
+            #print("##############################################################")
+            out = rt_mod.run()
+            # out.wait_to_read()
+        with_fuse_fps = batches * batch_size / (time.time() - tic)
+        print("{}: with_fuse_fps: {:.4f} fps".format(model_name, with_fuse_fps))
+        
+        #tvm_output = rt_mod.get_output(0)
+        #print(tvm_output)
+        
+        #ftimer = rt_mod.module.time_evaluator("run", ctx, min_repeat_ms=500, repeat=10)
+        #print(np.array(ftimer().results))
 benchmark(batch_size=1)

@@ -43,26 +43,8 @@ def read_xlsx(filename):
  
 if __name__=='__main__':
     first = False
-    # inputfileTxt = 'experiment_res/byoc_mobilenet_bs1_raw_pattern_table.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/resnet_bs1.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/resnet_bs64.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/resnet_bs1_byoc.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/resnet_bs64_byoc.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/mobilenet_bs1.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/mobilenet_bs64.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/mobilenet_bs1_byoc.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/mobilenet_bs64_byoc.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs1.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs64.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs1_byoc.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs64_byoc.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs1_byoc_with_gnu.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs64_byoc_with_gnu.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs1_gnu.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/bert_bs64_gnu.txt'
-    # inputfileTxt = 'experiment_res/mxnet_onednn/resnet_bs64_byoc_official_table.txt'
-    inputfileTxt = 'experiment_res/byoc_test_verbose_time_wo_integration_2.txt'
-    outfileExcel = 'experiment_res/byoc_test_verbose_time.xlsx'
+    inputfileTxt = 'experiment_res/0831/bs128_onednn.txt'
+    outfileExcel = 'experiment_res/0831/run100_res.xlsx'
     sheetname = inputfileTxt.split('/')[1].split('.')[0]
     txt_to_xlsx(inputfileTxt, sheetname, outfileExcel, first)
     # read_xlsx(outfileExcel)
