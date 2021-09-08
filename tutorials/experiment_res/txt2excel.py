@@ -1,6 +1,7 @@
 import openpyxl
 import codecs
 from openpyxl.utils import get_column_letter
+import os
  
 def txt_to_xlsx(filename, sheetname, outfile, first):
  
@@ -42,9 +43,20 @@ def read_xlsx(filename):
             print (cell.value)
  
 if __name__=='__main__':
-    first = False
-    inputfileTxt = 'experiment_res/0831/bs128_onednn.txt'
-    outfileExcel = 'experiment_res/0831/run100_res.xlsx'
-    sheetname = inputfileTxt.split('/')[1].split('.')[0]
+    first = True
+    #rootdir = "/home2/zhangya9/tvm/tutorials/experiment_res/0906"
+    outfileExcel = 'experiment_res/0907/tmp.xlsx'
+    inputfileTxt = '/home2/zhangya9/tvm/tutorials/experiment_res/0907/1550_byoc_opt_bs128.txt'
+    sheetname = inputfileTxt.split('/')[-1].split('.')[0]
     txt_to_xlsx(inputfileTxt, sheetname, outfileExcel, first)
+    """
+    for (dirpath,dirnames,filenames) in os.walk(rootdir):
+        for filename in filenames:
+            if os.path.splitext(filename)[1]=='.txt':
+                inputfileTxt = os.path.join(rootdir, filename)
+                sheetname = inputfileTxt.split('/')[-1].split('.')[0]
+                txt_to_xlsx(inputfileTxt, sheetname, outfileExcel, first)
+                first = False
+    """
+    
     # read_xlsx(outfileExcel)

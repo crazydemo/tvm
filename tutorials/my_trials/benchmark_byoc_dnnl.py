@@ -23,6 +23,7 @@ from mxnet.gluon.model_zoo.vision import get_model
 from PIL import Image
 from matplotlib import pyplot as plt
 import tvm.contrib.graph_executor as graph_executor
+#from tvm.runtime.vm import VirtualMachine
 #from tvm.contrib.debugger import debug_executor as graph_executor
 # 
 # model_dict = {'resnet50_v1': resnet50_v1}#{'mobilenet_v2_1_0': mobilenet_v2_1_0}
@@ -236,7 +237,7 @@ def transform_image(image):
     image = image[np.newaxis, :]
     return image
 
-def benchmark(batch_size=1, batches=100, warmup=10):
+def benchmark(batch_size=1, batches=100, warmup=20):
     img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
     img_name = "cat.png"
     img_path = download_testdata(img_url, img_name, module="data")
@@ -244,7 +245,7 @@ def benchmark(batch_size=1, batches=100, warmup=10):
     sample = transform_image(image)
     # print("x", sample.shape)
     # np.random.seed(0)
-    #sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+    sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
 
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = tvm.cpu()
@@ -264,6 +265,7 @@ def benchmark(batch_size=1, batches=100, warmup=10):
         # desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
             [
+                
                 relay.transform.CanonicalizeOps(),
                 # relay.transform.SimplifyInference(),
                 # relay.transform.FoldScaleAxis(),
@@ -294,7 +296,8 @@ def benchmark(batch_size=1, batches=100, warmup=10):
             mod["main"] = bind_params_by_name(mod["main"], params)
         with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
             json, lib, params = relay.build(seq(mod), "llvm", params=params)
-        lib = update_lib(lib)
+        #exe =  relay.vm.compile(mod, target="llvm", params=params)
+        #lib = update_lib(lib)
         # print(json)
         rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
         
@@ -302,9 +305,12 @@ def benchmark(batch_size=1, batches=100, warmup=10):
         rt_mod.set_input(**params)
         #print("##############################################################")
         rt_mod.run()
+        
 
         # out= rt_mod.debug_get_output("tvmgen_default_dnnl_0", out=tvm.nd.empty((1, 64, 112, 112), dtype="float32"))
-        # print(out)
+        #vm = VirtualMachine(exe, ctx)
+        #input_list = [tvm.nd.array(sample.astype("float32"))]
+        #results = vm.invoke("main", input_list)# print(out)
         # tvm_out = rt_mod.get_output(1, tvm.nd.empty((1, 1000), "float32")).numpy()
         # print(tvm_out)
         
@@ -313,6 +319,7 @@ def benchmark(batch_size=1, batches=100, warmup=10):
                 tic = time.time()
             #print("##############################################################")
             out = rt_mod.run()
+            #vm.invoke("main", input_list)
             # out.wait_to_read()
         with_fuse_fps = batches * batch_size / (time.time() - tic)
         print("{}: with_fuse_fps: {:.4f} fps".format(model_name, with_fuse_fps))

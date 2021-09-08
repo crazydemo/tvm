@@ -4,7 +4,7 @@ import warnings
 warnings.filterwarnings("ignore")
 from mxnet.gluon.model_zoo.vision import *
 model_dict = {'resnet50_v1': resnet50_v1}#'mobilenet_v2_1_0': mobilenet_v2_1_0, 
-def benchmark(batch_size=1, batches=100, warmup=10):
+def benchmark(batch_size=1, batches=100, warmup=20):
     mx.random.seed(0)
     sample = mx.nd.random.uniform(-1.0, 1.0, shape=(batch_size,3,224,224))
     ctx = mx.cpu()
@@ -45,4 +45,4 @@ def benchmark(batch_size=1, batches=100, warmup=10):
 
         print('{}: FUSED: {} FPS'.format(model_name, with_fuse_fps))
 
-benchmark(1)
+benchmark(128)
