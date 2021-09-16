@@ -187,14 +187,19 @@ def transform_image(image):
     image = image[np.newaxis, :]
     return image
 
-def benchmark(network, batch_size, profiling=False, warmup=100, batches=400, dtype="float32", target="llvm"):
-    img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
-    img_name = "cat.png"
-    img_path = download_testdata(img_url, img_name, module="data")
-    image = Image.open(img_path).resize((224, 224))
-    sample = transform_image(image)
-    #sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
-
+def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100, batches=400, dtype="float32", target="llvm"):
+    sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+    if check_acc:
+        img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
+        img_name = "cat.png"
+        img_path = download_testdata(img_url, img_name, module="data")
+        image = Image.open(img_path).resize((224, 224))
+        sample = transform_image(image)
+        batch_size=1
+        warmup = 0
+        batches = 1
+        profiling = False
+    
     ctx = tvm.cpu()
 
     input_shape = (batch_size, 3, 224, 224)
@@ -202,10 +207,6 @@ def benchmark(network, batch_size, profiling=False, warmup=100, batches=400, dty
     mod, params = relay.frontend.from_mxnet(
         block, shape={"data": input_shape}, dtype=dtype
     )
-    # print(mod)
-    #sample_for_mxnet = mx.ndarray.array(sample)
-    #output = block(sample_for_mxnet)
-    #print("mxnet output:{}".format(output))
 
     seq = tvm.transform.Sequential(
         [ 
@@ -233,15 +234,15 @@ def benchmark(network, batch_size, profiling=False, warmup=100, batches=400, dty
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
         json, lib, params = relay.build(seq(mod), target=target, params=params)
     #exe =  relay.vm.compile(mod, target="llvm", params=params)
+    import tvm.contrib.graph_executor as graph_executor
     if profiling:
         from tvm.contrib.debugger import debug_executor as graph_executor
-    else:
-        import tvm.contrib.graph_executor as graph_executor
+        warmup = 10
+        batches = 1
     rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
     
     rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
     rt_mod.set_input(**params)
-    rt_mod.run()
     
     # out= rt_mod.debug_get_output("tvmgen_default_dnnl_0", out=tvm.nd.empty((1, 64, 112, 112), dtype="float32"))
     #vm = VirtualMachine(exe, ctx)
@@ -259,11 +260,11 @@ def benchmark(network, batch_size, profiling=False, warmup=100, batches=400, dty
         # out.wait_to_read()
     with_fuse_fps = batches * batch_size / (time.time() - tic)
     print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
-    #tvm_output = rt_mod.get_output(0)
-    #print(tvm_output)
-    
-    #ftimer = rt_mod.module.time_evaluator("run", ctx, min_repeat_ms=500, repeat=10)
-    #print(np.array(ftimer().results))
+    if check_acc:
+        sample_for_mxnet = mx.ndarray.array(sample)
+        mxnet_output = block(sample_for_mxnet)
+        tvm_output = rt_mod.get_output(0)
+        print("acc:{}".format(np.sum(tvm_output-mxnet_output)))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -286,10 +287,11 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--batches", type=int, default=400)
     parser.add_argument("--profiling", type=bool, default=False)
+    parser.add_argument("--check_acc", type=bool, default=False)
     args = parser.parse_args()
 
     target = tvm.target.Target(args.target)
 
     # Benchmark
-    benchmark(args.network, args.batch_size, profiling=args.profiling,\
+    benchmark(args.network, args.batch_size, profiling=args.profiling,check_acc=args.check_acc,\
      warmup=args.warmup, batches=args.batches, dtype=args.dtype, target=args.target)
