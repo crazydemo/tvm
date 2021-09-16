@@ -5,6 +5,7 @@ for resnet50 and mobilenet
 import time
 import mxnet as mx
 import warnings
+import gluoncv
 
 # from torch._C import T
 warnings.filterwarnings("ignore")
@@ -151,36 +152,19 @@ class CustomPipeline:
 
     def get_op(self, node, *args):
         if node.op.name=='nn.conv2d':
-            shape = node.args[1].data.shape
-            # print(shape)
-            if len(shape)==4:
-                channels = shape[0]
-                kernel_size = shape[-1]
-            elif len(shape)==5:
-                channels = shape[0] * shape[-1]
-                kernel_size = shape[-2]
-            elif len(shape)==6:
-                channels = shape[0] * shape[-1]
-                kernel_size = shape[-3]
-            if node.args[1].data.shape[-1]==3:
-                return relay.nn.conv2d(args[0], args[1], padding=(1, 1), channels=channels, kernel_size=kernel_size)
-            elif node.args[1].data.shape[-1]==1 and node.args[1].data.shape[1]/node.args[1].data.shape[0]==2:
-                return relay.nn.conv2d(args[0], args[1], strides=(2, 2), channels=channels, kernel_size=kernel_size)
-            elif node.args[1].data.shape[-1]==1 and node.args[1].data.shape[0]/node.args[1].data.shape[1]==2:
-                return relay.nn.conv2d(args[0], args[1], strides=(2, 2), channels=channels, kernel_size=kernel_size)
-            return relay.nn.conv2d(args[0], args[1], channels=channels, kernel_size=kernel_size)
+            return relay.nn.conv2d(args[0], args[1], **node.attrs)
         elif node.op.name=='nn.relu':
             return relay.nn.relu(args[0])
         elif node.op.name=='add':
             return relay.add(args[0], args[1])
         elif node.op.name=='nn.max_pool2d':
-            return relay.nn.max_pool2d(args[0])
+            return relay.nn.max_pool2d(args[0], **node.attrs)
         elif node.op.name=='nn.global_avg_pool2d':
-            return relay.nn.global_avg_pool2d(args[0])
+            return relay.nn.global_avg_pool2d(args[0], **node.attrs)
         elif node.op.name=='nn.batch_flatten':
             return relay.nn.batch_flatten(args[0])
         elif node.op.name=='nn.dense':
-            return relay.nn.dense(args[0], args[1])
+            return relay.nn.dense(args[0], args[1], **node.attrs)
         else:
             return False
 
@@ -237,7 +221,7 @@ def transform_image(image):
     image = image[np.newaxis, :]
     return image
 
-def benchmark(batch_size=1, batches=100, warmup=20):
+def benchmark(batch_size=1, batches=400, warmup=100):
     img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
     img_name = "cat.png"
     img_path = download_testdata(img_url, img_name, module="data")
@@ -245,31 +229,27 @@ def benchmark(batch_size=1, batches=100, warmup=20):
     sample = transform_image(image)
     # print("x", sample.shape)
     # np.random.seed(0)
-    sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+    #sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
 
     target = "llvm -model=platinum-8124m -mcpu=skylake-avx512"
     ctx = tvm.cpu()
 
     input_shape = (batch_size, 3, 224, 224)
     for model_name in model_dict.keys():
-        block = mx.gluon.model_zoo.vision.get_resnet(1, 50, pretrained=True)
+        block = gluoncv.model_zoo.get_model('ResNet50_v1b', pretrained=True)
         mod, params = relay.frontend.from_mxnet(
             block, shape={"data": input_shape}, dtype="float32"
         )
         # mod, params = model_dict[model_name].get_workload(batch_size=batch_size, dtype="float32")
         # print(mod)
-        # sample_for_mxnet = mx.ndarray.array(sample)
-        # output = block(sample_for_mxnet)
-        # print("mxnet output:{}".format(output))
+        #sample_for_mxnet = mx.ndarray.array(sample)
+        #output = block(sample_for_mxnet)
+        #print("mxnet output:{}".format(output))
         # print(params)
         # desired_layouts = {"nn.conv2d": ["NCHW16c", "OIHW16o16i"],"nn.batch_norm": ["NCHW16c", "OIHW16o16i"]}#
         seq = tvm.transform.Sequential(
-            [
-                
-                relay.transform.CanonicalizeOps(),
-                # relay.transform.SimplifyInference(),
-                # relay.transform.FoldScaleAxis(),
-                # relay.transform.SimplifyExpr(),
+            [ 
+               relay.transform.CanonicalizeOps(),
                 relay.transform.InferType(),
                 relay.transform.SimplifyInference(),
                 relay.transform.FoldConstant(),
@@ -277,17 +257,13 @@ def benchmark(batch_size=1, batches=100, warmup=20):
 
                 CustomPipeline(),
                 relay.transform.FoldConstant(),
-                # tvm.transform.PrintIR(),
-                # relay.transform.FuseOps(),
-                # tvm.transform.PrintIR(),
+                
                 relay.transform.AlterOpLayout(),
-                # tvm.transform.PrintIR(),
-                # relay.transform.ConvertLayout(desired_layouts),
+                
                 relay.transform.MergeComposite(pattern_table()),
                 relay.transform.AnnotateTarget("dnnl"),
                 relay.transform.MergeCompilerRegions(),
                 relay.transform.PartitionGraph(),
-                # tvm.transform.PrintIR(),
             ]
         )
 
@@ -303,7 +279,6 @@ def benchmark(batch_size=1, batches=100, warmup=20):
         
         rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
         rt_mod.set_input(**params)
-        #print("##############################################################")
         rt_mod.run()
         
 
@@ -317,13 +292,12 @@ def benchmark(batch_size=1, batches=100, warmup=20):
         for i in range(batches+warmup):
             if i == warmup:
                 tic = time.time()
-            #print("##############################################################")
             out = rt_mod.run()
+            #rt_mod.profile()
             #vm.invoke("main", input_list)
             # out.wait_to_read()
         with_fuse_fps = batches * batch_size / (time.time() - tic)
         print("{}: with_fuse_fps: {:.4f} fps".format(model_name, with_fuse_fps))
-        
         #tvm_output = rt_mod.get_output(0)
         #print(tvm_output)
         

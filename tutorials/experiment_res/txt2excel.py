@@ -45,8 +45,8 @@ def read_xlsx(filename):
 if __name__=='__main__':
     first = True
     #rootdir = "/home2/zhangya9/tvm/tutorials/experiment_res/0906"
-    outfileExcel = 'experiment_res/0907/tmp.xlsx'
-    inputfileTxt = '/home2/zhangya9/tvm/tutorials/experiment_res/0907/1550_byoc_opt_bs128.txt'
+    outfileExcel = '/home2/zhangya9/tvm/tutorials/experiment_res/0916/opt_byoc_1.xlsx'
+    inputfileTxt = '/home2/zhangya9/tvm/tutorials/experiment_res/0916/bs1_1.txt'
     sheetname = inputfileTxt.split('/')[-1].split('.')[0]
     txt_to_xlsx(inputfileTxt, sheetname, outfileExcel, first)
     """
