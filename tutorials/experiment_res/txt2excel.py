@@ -43,10 +43,10 @@ def read_xlsx(filename):
             print (cell.value)
  
 if __name__=='__main__':
-    first = True
+    first = False
     #rootdir = "/home2/zhangya9/tvm/tutorials/experiment_res/0906"
-    outfileExcel = '/home2/zhangya9/tvm/tutorials/experiment_res/0916/opt_byoc_1.xlsx'
-    inputfileTxt = '/home2/zhangya9/tvm/tutorials/experiment_res/0916/bs1_1.txt'
+    outfileExcel = '/home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc.xlsx'
+    inputfileTxt = '/home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc_bs128.txt'
     sheetname = inputfileTxt.split('/')[-1].split('.')[0]
     txt_to_xlsx(inputfileTxt, sheetname, outfileExcel, first)
     """

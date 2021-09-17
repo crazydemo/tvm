@@ -233,38 +233,43 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         mod["main"] = bind_params_by_name(mod["main"], params)
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
         json, lib, params = relay.build(seq(mod), target=target, params=params)
-    #exe =  relay.vm.compile(mod, target="llvm", params=params)
     import tvm.contrib.graph_executor as graph_executor
     if profiling:
         from tvm.contrib.debugger import debug_executor as graph_executor
-        warmup = 10
-        batches = 1
+        # warmup = 10
+        # batches = 1
     rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
     
     rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
     rt_mod.set_input(**params)
     
-    # out= rt_mod.debug_get_output("tvmgen_default_dnnl_0", out=tvm.nd.empty((1, 64, 112, 112), dtype="float32"))
-    #vm = VirtualMachine(exe, ctx)
-    #input_list = [tvm.nd.array(sample.astype("float32"))]
-    #results = vm.invoke("main", input_list)# print(out)
-    # tvm_out = rt_mod.get_output(1, tvm.nd.empty((1, 1000), "float32")).numpy()
-    # print(tvm_out)
-    
-    for i in range(batches+warmup):
-        if i == warmup:
-            tic = time.time()
-        out = rt_mod.run()
-        #rt_mod.profile()
-        #vm.invoke("main", input_list)
-        # out.wait_to_read()
-    with_fuse_fps = batches * batch_size / (time.time() - tic)
-    print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
     if check_acc:
         sample_for_mxnet = mx.ndarray.array(sample)
-        mxnet_output = block(sample_for_mxnet)
-        tvm_output = rt_mod.get_output(0)
-        print("acc:{}".format(np.sum(tvm_output-mxnet_output)))
+        mxnet_output = block(sample_for_mxnet).asnumpy()
+        tvm_output = rt_mod.get_output(0).asnumpy()
+        print("mse: {}".format(np.mean((tvm_output-mxnet_output)**2)))
+
+    if profiling:
+        import datetime
+        total_time_lst = []
+        tic = datetime.datetime.now()
+        for i in range(batches+warmup):
+            tmp = rt_mod.profile()
+            us = tmp.calls[0]["Duration (us)"].microseconds
+            percent = tmp.calls[0]["Percent"].percent
+            total_time = us * 100 / percent / 1000
+            print("{}/{}: total time:{:.4f}, us:{:.4f}, percent:{:.4f}".format(i, batches+warmup, us, total_time, percent))
+            total_time_lst.append(total_time)
+        print("all ops' execution time:{}".format(np.mean(total_time_lst[warmup::])))
+        print("profiling time:{}".format(datetime.datetime.now()-tic))
+    else:
+        for i in range(batches+warmup):
+            if i == warmup:
+                tic = time.time()
+            out = rt_mod.run()
+        with_fuse_fps = batches * batch_size / (time.time() - tic)
+        print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
