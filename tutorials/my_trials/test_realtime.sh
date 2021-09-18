@@ -19,5 +19,5 @@ for ((i=0; i<7; i++))
         startCore=$[${i}*4]
         endCore=$[${startCore}+3]
         numactl --physcpubind=${startCore}-${endCore} --membind=0 \
-        python /home2/zhangya9/tvm/tutorials/my_trials/benchmark_byoc_dnnl.py >> /home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc_${i}.txt &
+        python /home2/zhangya9/tvm/tutorials/my_trials/benchmark_byoc_dnnl.py --profiling=True& #>> /home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc_${i}_v1.7.txt &
     done

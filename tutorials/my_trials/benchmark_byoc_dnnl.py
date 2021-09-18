@@ -255,12 +255,15 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         tic = datetime.datetime.now()
         for i in range(batches+warmup):
             tmp = rt_mod.profile()
-            us = tmp.calls[0]["Duration (us)"].microseconds
-            percent = tmp.calls[0]["Percent"].percent
-            total_time = us * 100 / percent / 1000
-            print("{}/{}: total time:{:.4f}, us:{:.4f}, percent:{:.4f}".format(i, batches+warmup, us, total_time, percent))
+            #print(tmp.calls[2])#1 gap 2 reorder
+            gap = tmp.calls[1]["Duration (us)"].microseconds
+            #percent = tmp.calls[0]["Percent"].percent
+            reorder = tmp.calls[2]["Duration (us)"].microseconds
+            #total_time = us * 100 / percent / 1000
+            print("{}/{}: gap:{:.4f}, reorder:{:.4f}".format(i, batches+warmup, gap, reorder))
+            total_time = gap+reorder
             total_time_lst.append(total_time)
-        print("all ops' execution time:{}".format(np.mean(total_time_lst[warmup::])))
+        print("all ops' execution time:{}".format(np.mean(total_time_lst[warmup::])/1000))
         print("profiling time:{}".format(datetime.datetime.now()-tic))
     else:
         for i in range(batches+warmup):

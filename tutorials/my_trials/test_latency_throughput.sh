@@ -25,4 +25,4 @@ export KMP_AFFINITY=granularity=fine,noduplicates,compact,1,0
 ### throughput all ops' execution time
 numactl --physcpubind=0-27 --membind=0 \
 python $HOME/tvm/tutorials/my_trials/benchmark_byoc_dnnl.py \
---batch-size=128 >> $HOME/tvm/tutorials/experiment_res/0917/opt_byoc_bs128.txt
+--batch-size=1 #>> $HOME/tvm/tutorials/experiment_res/0917/opt_byoc_bs128_v1.7.txt

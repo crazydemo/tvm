@@ -3,10 +3,11 @@ import codecs
 from openpyxl.utils import get_column_letter
 import os
  
-def txt_to_xlsx(filename, sheetname, outfile, first):
- 
+def txt_to_xlsx(filename, sheetname, outfile):
+    
+    first = os.path.exists(outfile)
     fr = codecs.open(filename,'r')
-    if first:
+    if not first:
         wb = openpyxl.Workbook()
     else:
         wb=openpyxl.load_workbook(outfile)
@@ -43,12 +44,11 @@ def read_xlsx(filename):
             print (cell.value)
  
 if __name__=='__main__':
-    first = False
     #rootdir = "/home2/zhangya9/tvm/tutorials/experiment_res/0906"
-    outfileExcel = '/home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc.xlsx'
-    inputfileTxt = '/home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc_bs128.txt'
+    outfileExcel = '/home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc_v1.7.xlsx'
+    inputfileTxt = '/home2/zhangya9/tvm/tutorials/experiment_res/0917/opt_byoc_bs128_v1.7.txt'
     sheetname = inputfileTxt.split('/')[-1].split('.')[0]
-    txt_to_xlsx(inputfileTxt, sheetname, outfileExcel, first)
+    txt_to_xlsx(inputfileTxt, sheetname, outfileExcel)
     """
     for (dirpath,dirnames,filenames) in os.walk(rootdir):
         for filename in filenames:
