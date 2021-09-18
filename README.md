@@ -21,10 +21,7 @@ make -j
 ## Benchmark
 - Commands for opt_byoc, original byoc and onednnbs=1 / bs=128 28core
 ```bash
-OMP_NUM_THREADS=28 KMP_AFFINITY=granularity=fine,noduplicates,compact,1,0 numactl --physcpubind=0-27 --membind=0 python benchmark_byoc_dnnl.py
-```
-```bash
-OMP_NUM_THREADS=28 KMP_AFFINITY=granularity=fine,noduplicates,compact,1,0 numactl --physcpubind=0-27 --membind=0 python benchmark_byoc_raw.py
+./tutorials/my_trials/test_latency_throughput.sh
 ```
 ```bash
 OMP_NUM_THREADS=28 KMP_AFFINITY=granularity=fine,noduplicates,compact,1,0 numactl --physcpubind=0-27 --membind=0 python benchmark_onednn.py
@@ -32,5 +29,5 @@ OMP_NUM_THREADS=28 KMP_AFFINITY=granularity=fine,noduplicates,compact,1,0 numact
 
 - Commands for multi-instance
 ```bash
-./multi_instance.sh
+./tutorials/my_trials/test_realtime.sh
 ```
