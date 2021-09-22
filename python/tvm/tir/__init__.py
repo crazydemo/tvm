@@ -42,7 +42,7 @@ from .op import sin, sinh, asin, asinh
 from .op import cos, cosh, acos, acosh
 from .op import tan, tanh, atan, atan2, atanh
 from .op import erf, sigmoid, sqrt, rsqrt, floor, ceil, hypot
-from .op import trunc, abs, round, nextafter, nearbyint, power, popcount, fmod, if_then_else, AutoQuery
+from .op import trunc, abs, round, nextafter, nearbyint, power, popcount, fmod, if_then_else
 from .op import isnan, isfinite, isinf, copysign
 from .op import div, indexdiv, indexmod, truncdiv, truncmod, floordiv, floormod
 from .op import comm_reducer, min, max, sum

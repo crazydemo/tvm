@@ -79,37 +79,19 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   void Run() override {
     // Fill in the input buffers.
-    //struct timeval start, end;
-    //gettimeofday( &start, NULL );
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);  
-      //size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
-      //size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      //write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-      //                     offset_in_bytes);
       entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
     }
-    //gettimeofday( &end, NULL );
-    //std::cout<<"write: "<<end.tv_usec-start.tv_usec<<std::endl;
-    //gettimeofday( &start, NULL );
     for (size_t i = 0; i < outputs_.size(); ++i) {
       auto eid = EntryID(outputs_[i]);
-      //size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
-      //size_t buffer_size = GetDataSize(*data_entry_[eid]);
-                              
-      //read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size, offset_in_bytes);
       entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
     }
-      //gettimeofday( &end, NULL );
-      //std::cout<<"read: "<<end.tv_usec-start.tv_usec<<std::endl;
-     //gettimeofday( &start, NULL );
     // Invoke the engine through intepreting the stream.
     for (size_t i = 0; i < net_.size(); ++i) {
       net_.at(i).execute(stream_, net_args_.at(i));
     }
     stream_.wait();
-    //gettimeofday( &end, NULL );
-    //std::cout<<"execute: "<<end.tv_usec-start.tv_usec<<std::endl;
   }
 
  private:
@@ -172,20 +154,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   dnnl::memory BindDNNLMemory(const JSONGraphNodeEntry& entry, dnnl::memory mem,
                               size_t offset = 0) {
     auto eid = EntryID(entry);
-    // std::cout<<"eid: "<<eid<<std::endl;
-    // Since the DNNL memory has been created before calling this function, we assume the entry
-    // has not yet been bound to the other DNNL memory; otherwise it may have memory leak.
     ICHECK_EQ(entry_out_mem_.count(eid), 0);
 
     // TODO(@comanic): Support other data types (i.e., int8).
     auto data_node = nodes_[entry.id_];
-    // std::cout<<"data_node: "<<entry.id_<<std::endl;
-    // std::cout<<data_node<<std::endl;
     auto dltype = data_node.GetOpDataType()[entry.index_];
-    // std::cout<<dltype<<std::endl;
-
-    // size_t buffer_size = GetDataSize(*data_entry_[eid]);
-    // std::cout<<"buffer_size: "<<buffer_size<<std::endl;
     ICHECK_EQ(dltype.bits, 32);
 
     entry_out_mem_[eid] = {mem, offset};
@@ -203,8 +176,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::vector<std::string> str_strides = node.GetAttr<std::vector<std::string>>("strides");
     std::vector<std::string> str_padding = node.GetAttr<std::vector<std::string>>("padding");
     dnnl::memory::dim groups = std::stoi(node.GetAttr<std::vector<std::string>>("groups")[0]);
-    // std::cout<<node.GetAttr<std::vector<std::string>>("data_layout")[0]<<std::endl;
-    // std::cout<<node.GetAttr<std::vector<std::string>>("kernel_layout")[0]<<std::endl;
     auto src_df = layout_dict[node.GetAttr<std::vector<std::string>>("data_layout")[0]];
     auto weight_df = layout_dict[node.GetAttr<std::vector<std::string>>("kernel_layout")[0]];
     auto dst_df = src_df;
@@ -212,24 +183,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if(node.GetAttr<std::vector<std::string>>("out_layout")[0].size()!=0){
       dst_df = layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
     }
-    
-    // std::cout<<"data_entry: "<<data_entry.id_<<std::endl;
-    // std::cout<<"weight_entry: "<<weight_entry.id_<<std::endl;
-    // for (auto in: input_shape)
-    // {
-    //   std::cout<<in<<' ';
-    // }
-
-    // std::cout<<node.GetAttr<std::vector<std::string>>("data_layout")[0]<<std::endl;
-    // std::cout<<node.GetAttr<std::vector<std::string>>("kernel_layout")[0]<<std::endl;
-
-    // std::cout<<node.GetAttr<std::vector<std::string>>("out_layout")[0].size()<<std::endl;
-
-    // for (auto in: weight_shape)
-    // {
-    //   std::cout<<in<<' ';
-    // }
-    // std::cout<<std::endl;
     
     dnnl::memory::dim N = input_shape[0],       // batch size
         IC = input_shape[1],                    // input channels
@@ -262,29 +215,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           KW = weight_shape[2];
           OH = (IH - KH + PH_L + PH_R) / SH + 1;
           OW = (IW - KW + PW_L + PW_R) / SW + 1;
-          // std::cout<<"conv  OH "<<OH<<' '<<IH<<' '<<KH<<' '<<PH_L<<' '<<PH_R<<' '<<SH<<std::endl;
-          // std::cout<<"conv  OW "<<OW<<' '<<IW<<' '<<KW<<' '<<PW_L<<' '<<PW_R<<' '<<SW<<std::endl;
         }
     }
-    // std::cout<<"conv "<<OC<<" "<<OH<<" "<<OW<<std::endl;
-// 
-    // std::cout<<"conv "<<IC<<' '<<IH<<' '<<IW<<' '<<OC<<' '<<KH<<' '<<KW<<' '<<OH<<' '<<OW<<std::endl;
-    // // std::cout<<input_shape.size()<<' '<<std::endl;
-    // for (auto in: input_shape)
-    // {
-    //   std::cout<<in<<' ';
-    // }
-
-    // std::cout<<std::endl;
-
-    // std::cout<<weight_shape.size()<<' '<<std::endl;
-
-    // for (auto in: weight_shape)
-    // {
-    //   std::cout<<in<<' ';
-    // }
-    // std::cout<<std::endl;
-
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
     dnnl::memory::dims weights_dims = {OC, IC, KH, KW};
@@ -302,8 +234,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, weight_df);
     auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
     auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, dst_df);
-
-    // std::cout<<N<<' '<<OC<<' '<<OH<<' '<<OW<<std::endl;
 
     // Covn2d description.
     auto conv_desc = dnnl::convolution_forward::desc(
@@ -330,11 +260,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_.push_back(conv);
 
     // Data memory.
-    // ICHECK_EQ(node.GetAttr<std::vector<std::string>>("data_layout")[0], "NCHW");
     auto conv2d_src_memory = BindDNNLMemory(data_entry, {src_dims, dt::f32, src_df});
 
     // Weight memory.
-    // ICHECK_EQ(node.GetAttr<std::vector<std::string>>("kernel_layout")[0], "OIHW");
     auto conv2d_weights_memory = BindDNNLMemory(
         weight_entry, {weights_dims, dt::f32, (groups > 1) ? tag::goihw : weight_df});
 
@@ -342,7 +270,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv2d_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
-      // std::cout<<"bias_entry: "<<bias_entry.id_<<std::endl;
       BindDNNLMemory(bias_entry, conv2d_bias_memory);
     } else {
       float bias[OC] = {0};
@@ -357,12 +284,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       conv2d_dst_memory = BindDNNLMemory(dst_entry, conv2d_prim_desc.dst_desc());
     }
       BindDNNLMemory(out_entry, conv2d_dst_memory);
-    // std::cout<<"out_entry: "<<out_entry.id_<<std::endl;
-    // auto conv2d_dst_memory = BindDNNLMemory(out_entry, conv2d_prim_desc.dst_desc());
-
-    
-    // std::cout<<"###################################"<<std::endl;
-    // std::cout<<conv2d_dst_memory.get_data_handle()<<std::endl;
     // Bind memory buffers.
     net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
                          {DNNL_ARG_WEIGHTS, conv2d_weights_memory},
@@ -382,9 +303,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dim B = input_shape[0],  // batch size
         IC = input_shape[1],               // input channels
         OC = weight_shape[0];              // output channels
-
-    
-    // std::cout<<"dense"<<IC<<" "<<OC<<std::endl;
 
     // Memory shapes.
     dnnl::memory::dims data_dims = {B, IC};
@@ -417,8 +335,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       float bias[OC] = {0};
       write_to_dnnl_memory(bias, bias_memory, OC * sizeof(float));
     }
-    // float bias[OC] = {0};
-    // write_to_dnnl_memory(bias, bias_memory, OC * sizeof(float));
     JSONGraphNodeEntry out_entry(nid, 0);
     auto dst_memory = BindDNNLMemory(out_entry, dense_prim_desc.dst_desc());
 
@@ -439,13 +355,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dims data_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     dnnl::memory::dim IC = data_shape[1];
 
-    // std::cout<<"batchnorm raw data shape";
-    // for(auto in : data_shape)
-    // {
-    //   std::cout<<in<<" ";
-    // }
-    // std::cout<<std::endl;
-
     auto data_format = tag::abcd;
 
     if(data_shape.size()>4)
@@ -457,17 +366,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     data_shape = new_data_shape;
     data_format = tag::aBcd16b;
     }
-
-    // std::cout<<"BN "<<IC<<std::endl;
     
     float epsilon = std::stof(node.GetAttr<std::vector<std::string>>("epsilon")[0]);
-    // std::cout<<"batchnorm new shape";
-    // for(auto in : data_shape)
-    // {
-    //   std::cout<<in<<" ";
-    // }
-    // std::cout<<std::endl;
-    
     // Memory description.
     dnnl::memory::desc data_md = dnnl::memory::desc({data_shape, dt::f32, data_format});//GenDNNLMemDescByShape(data_shape, dt::f32);
 
@@ -504,13 +404,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_entry = node.GetInputs()[0];
     dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     auto data_format = tag::abcd;
-    // std::cout<<"Relu raw "; 
-    // for (auto i : shape)
-    // {
-    //   std::cout<<i<<" ";
-    // }
-    // std::cout<<std::endl;
-
     if(shape.size()>4)
     {
       data_format = tag::aBcd16b;
@@ -520,14 +413,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {new_data_shape[i] = shape[i];}
       shape = new_data_shape;
     }
-
-    // std::cout<<"Relu new "; 
-    // for (auto i : shape)
-    // {
-    //   std::cout<<i<<" ";
-    // }
-    // // std::cout<<std::endl;
-    // std::cout<<std::endl;
 
     auto data_md = dnnl::memory::desc{{shape}, dt::f32, data_format};
 
@@ -563,13 +448,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       data_dims.push_back(data_shape);
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
-
-    // std::cout<<"add "; 
-    // for (auto i : data_shape)
-    // {
-    //   std::cout<<i<<" ";
-    // }
-    // std::cout<<std::endl;
 
     }
     
@@ -667,12 +545,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {
         IC = input_shape[1]*input_shape[4];                    // input channels
     }
-    // Correctness:
-    /* bool ceil_mode = node.GetAttr<bool>("ceil_mode");
-    if(ceil_mode) {
-      std::cout << "# Using ceiling mode;" << std::endl;
-    }
-    std::cout << "# Checking ceil_mode, poolsize, dilation: " << std::endl;*/
 
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
@@ -704,7 +576,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_.push_back(pool);
 
     // Memories.
-    // ICHECK_EQ(node.GetAttr<std::vector<std::string>>("layout")[0], "NCHW");
     auto pool2d_src_memory = BindDNNLMemory(data_entry, pool_src_md);
 
     JSONGraphNodeEntry out_entry(nid, 0);
@@ -733,9 +604,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dim dilation1 = std::stoi(node.GetAttr<std::vector<std::string>>("dilation")[1]);
 
     // Attributes related to AvgPool
-    // bool count_include_pad = node.GetAttr<bool>("count_include_pad");
-    // std::cout << "# count_include_pad or not?" << std::endl; // debug purpose
-    // std::cout << node.GetAttr<std::vector<std::string>>("count_include_pad")[0] << std::endl;
     int int_countpad = std::stoi(node.GetAttr<std::vector<std::string>>("count_include_pad")[0]); //notice
     bool count_include_pad = int_countpad != 0 ? true : false;
     auto alg_kind = count_include_pad ?
@@ -801,20 +669,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   // Read from DNNL memory (+offset) and write to the handle.
   inline void read_from_dnnl_memory(void* handle, const dnnl::memory& mem, size_t size,
                                     size_t offset = 0) {
-    //uint8_t* src = static_cast<uint8_t*>(mem.get_data_handle());
-    //handle = src;
-    // std::cout<<"Read from DNNL memory (+offset) and write to the handle."<<src<<std::endl;
-    //std::copy(src + offset, src + offset + size, static_cast<uint8_t*>(handle));
     mem.set_data_handle(handle);
   }
 
   // Read from the handle and write to DNNL memory (+offset).
   inline void write_to_dnnl_memory(void* handle, const dnnl::memory& mem, size_t size,
                                    size_t offset = 0) {
-    //uint8_t* dst = static_cast<uint8_t*>(mem.get_data_handle());
-    // std::cout<<"Read from the handle and write to DNNL memory (+offset)."<<dst<<std::endl;
-    //std::copy(reinterpret_cast<uint8_t*>(handle), reinterpret_cast<uint8_t*>(handle) + size,
-    //          dst + offset);
     mem.set_data_handle(handle);
   }
 

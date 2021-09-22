@@ -184,8 +184,8 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     SH, SW = attrs.strides
     SH, SW = int(SH), int(SW)
 
-    from tvm import tir
-    res = tir.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
+    from tvm import relay
+    res = relay.query_layout.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
 
     new_attrs = dict(attrs)
 

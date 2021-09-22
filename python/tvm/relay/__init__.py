@@ -37,7 +37,7 @@ from .transform import build_config
 from . import debug
 from . import param_dict
 from .backend import vm
-
+from .query_layout import AutoQuery
 # Root operators
 from .op import nn
 from .op import image
