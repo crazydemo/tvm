@@ -21,9 +21,15 @@ from tvm.relay.build_module import bind_params_by_name
 from tvm.contrib.download import download_testdata
 from PIL import Image
 
-#from tvm.runtime.vm import VirtualMachine
-
 network_dict = {"resnet50":"ResNet50_v1b"}
+
+translate_dict = {"abcd":"NCHW",
+                "Acdb8a": "OHWI8o",
+                "Acdb16a": "OHWI16o",
+                "ABcd8b8a": "OIHW8i8o",
+                "ABcd16b16a": "OIHW16i16o",
+                "aBcd8b": "NCHW8c",
+                "aBcd16b": "NCHW16c",}
 
 @tvm.instrument.pass_instrument
 class PrintIR:
@@ -159,25 +165,35 @@ class CustomPipeline:
 @relay.op.register_alter_op_layout("nn.conv2d", level=114)
 def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
+    
+    def get_shape(tensor):
+        if 'Var' in str(type(tensor)):
+            return tensor.type_annotation.concrete_shape
+        elif 'Constant' in str(type(tensor)):
+            return tensor.data.shape
+        elif 'TensorType' in str(type(tensor)):
+            return tensor.concrete_shape
+        else:
+            return (-1, -1, -1, -1)
+    
+    N, IC, IH, IW = get_shape(data)
+    OC, IC, KH, KW = get_shape(weight)
+    N, _, OH, OW = get_shape(out_type)
+    PH_L, PH_R, PW_L, PW_R = attrs.padding
+    PH_L, PH_R, PW_L, PW_R = int(PH_L), int(PH_R), int(PW_L), int(PW_R)
+    SH, SW = attrs.strides
+    SH, SW = int(SH), int(SW)
+
+    from tvm import tir
+    res = tir.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
+
     new_attrs = dict(attrs)
-    new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OHWI16o'
-    new_attrs['out_layout'] = 'NCHW16c'
-    try:
-        if weight.type_annotation.shape[1]>=16:
-            new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW16c'
-            return relay.nn.conv2d(data, weight, **new_attrs)
-    except:
-        if weight.data.shape[1]>=16:
-            new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW16c'
-            return relay.nn.conv2d(data, weight, **new_attrs)
-        return relay.nn.conv2d(data, weight, **new_attrs)
+
+    src_df, weight_df, dst_df = res.split(',')
+
+    new_attrs['data_layout'] = translate_dict[src_df]
+    new_attrs['kernel_layout'] = translate_dict[weight_df]
+    new_attrs['out_layout'] = translate_dict[dst_df]
     return relay.nn.conv2d(data, weight, **new_attrs)
 
 def transform_image(image):
