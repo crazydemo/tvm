@@ -21,9 +21,15 @@ from tvm.relay.build_module import bind_params_by_name
 from tvm.contrib.download import download_testdata
 from PIL import Image
 
-#from tvm.runtime.vm import VirtualMachine
-
 network_dict = {"resnet50":"ResNet50_v1b"}
+
+translate_dict = {"abcd":"NCHW",
+                "Acdb8a": "OHWI8o",
+                "Acdb16a": "OHWI16o",
+                "ABcd8b8a": "OIHW8i8o",
+                "ABcd16b16a": "OIHW16i16o",
+                "aBcd8b": "NCHW8c",
+                "aBcd16b": "NCHW16c",}
 
 @tvm.instrument.pass_instrument
 class PrintIR:
@@ -159,25 +165,35 @@ class CustomPipeline:
 @relay.op.register_alter_op_layout("nn.conv2d", level=114)
 def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
+    
+    def get_shape(tensor):
+        if 'Var' in str(type(tensor)):
+            return tensor.type_annotation.concrete_shape
+        elif 'Constant' in str(type(tensor)):
+            return tensor.data.shape
+        elif 'TensorType' in str(type(tensor)):
+            return tensor.concrete_shape
+        else:
+            return (-1, -1, -1, -1)
+    
+    N, IC, IH, IW = get_shape(data)
+    OC, IC, KH, KW = get_shape(weight)
+    N, _, OH, OW = get_shape(out_type)
+    PH_L, PH_R, PW_L, PW_R = attrs.padding
+    PH_L, PH_R, PW_L, PW_R = int(PH_L), int(PH_R), int(PW_L), int(PW_R)
+    SH, SW = attrs.strides
+    SH, SW = int(SH), int(SW)
+
+    from tvm import tir
+    res = tir.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
+
     new_attrs = dict(attrs)
-    new_attrs['data_layout'] = 'NCHW'
-    new_attrs['kernel_layout'] = 'OHWI16o'
-    new_attrs['out_layout'] = 'NCHW16c'
-    try:
-        if weight.type_annotation.shape[1]>=16:
-            new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW16c'
-            return relay.nn.conv2d(data, weight, **new_attrs)
-    except:
-        if weight.data.shape[1]>=16:
-            new_attrs = dict(attrs)
-            new_attrs['data_layout'] = 'NCHW16c'
-            new_attrs['kernel_layout'] = 'OIHW16i16o'#'OIHW'
-            new_attrs['out_layout'] = 'NCHW16c'
-            return relay.nn.conv2d(data, weight, **new_attrs)
-        return relay.nn.conv2d(data, weight, **new_attrs)
+
+    src_df, weight_df, dst_df = res.split(',')
+
+    new_attrs['data_layout'] = translate_dict[src_df]
+    new_attrs['kernel_layout'] = translate_dict[weight_df]
+    new_attrs['out_layout'] = translate_dict[dst_df]
     return relay.nn.conv2d(data, weight, **new_attrs)
 
 def transform_image(image):
@@ -188,18 +204,6 @@ def transform_image(image):
     return image
 
 def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100, batches=400, dtype="float32", target="llvm"):
-    sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
-    if check_acc:
-        img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
-        img_name = "cat.png"
-        img_path = download_testdata(img_url, img_name, module="data")
-        image = Image.open(img_path).resize((224, 224))
-        sample = transform_image(image)
-        batch_size=1
-        warmup = 0
-        batches = 1
-        profiling = False
-    
     ctx = tvm.cpu()
 
     input_shape = (batch_size, 3, 224, 224)
@@ -233,29 +237,35 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         mod["main"] = bind_params_by_name(mod["main"], params)
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
         json, lib, params = relay.build(seq(mod), target=target, params=params)
-    import tvm.contrib.graph_executor as graph_executor
-    if profiling:
-        from tvm.contrib.debugger import debug_executor as graph_executor
-        # warmup = 10
-        # batches = 1
-    rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
-    
-    rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
-    rt_mod.set_input(**params)
-    
-    if check_acc:
-        sample_for_mxnet = mx.ndarray.array(sample)
-        mxnet_output = block(sample_for_mxnet).asnumpy()
-        tvm_output = rt_mod.get_output(0).asnumpy()
-        print("mse: {}".format(np.mean((tvm_output-mxnet_output)**2)))
+    #exe =  relay.vm.compile(mod, target="llvm", params=params)
 
-    if profiling:
-        import datetime
+    if check_acc:
+        img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
+        img_name = "cat.png"
+        img_path = download_testdata(img_url, img_name, module="data")
+        image = Image.open(img_path).resize((224, 224))
+        sample = transform_image(image)
+
+        import tvm.contrib.graph_executor as graph_executor
+        rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
+    
+        rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
+        rt_mod.set_input(**params)
+        out = rt_mod.run()
+        sample_for_mxnet = mx.ndarray.array(sample)
+        mxnet_output = block(sample_for_mxnet)
+        tvm_output = rt_mod.get_output(0)
+        print("acc:{}".format(np.mean(tvm_output.asnumpy()-mxnet_output.asnumpy())))
+    elif profiling:
+        from tvm.contrib.debugger import debug_executor as graph_executor
+        rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
+        sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+        rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
+        rt_mod.set_input(**params)
         total_time_lst = []
-        tic = datetime.datetime.now()
         for i in range(batches+warmup):
             tmp = rt_mod.profile()
-            #print(tmp.calls[2])#1 gap 2 reorder
+>>>>>>> tmp
             gap = tmp.calls[1]["Duration (us)"].microseconds
             #percent = tmp.calls[0]["Percent"].percent
             reorder = tmp.calls[2]["Duration (us)"].microseconds
@@ -263,17 +273,23 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             print("{}/{}: gap:{:.4f}, reorder:{:.4f}".format(i, batches+warmup, gap, reorder))
             total_time = gap+reorder
             total_time_lst.append(total_time)
+        print("all ops' execution time:{}".format(np.mean(total_time_lst[warmup::])))
         print("all ops' execution time:{}".format(np.mean(total_time_lst[warmup::])/1000))
         print("profiling time:{}".format(datetime.datetime.now()-tic))
+    
     else:
+        import tvm.contrib.graph_executor as graph_executor
+        rt_mod = graph_executor.create(json, lib, ctx)
+        sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+        rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
+        rt_mod.set_input(**params)
         for i in range(batches+warmup):
             if i == warmup:
                 tic = time.time()
             out = rt_mod.run()
         with_fuse_fps = batches * batch_size / (time.time() - tic)
         print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
-    
-
+        
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
