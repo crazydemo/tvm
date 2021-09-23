@@ -118,6 +118,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Conv2d(nid, true, true, true);
         } else if ("nn.dense" == op_name) {
           Dense(nid);
+        } else if ("dnnl.dense_bias_relu" == op_name) {
+          Dense(nid, true, true);
         } else if ("dnnl.dense_bias" == op_name) {
           Dense(nid, true);
         } else if ("nn.batch_norm" == op_name) {
@@ -291,7 +293,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                          {DNNL_ARG_DST, conv2d_dst_memory}});
   }
 
-  void Dense(const size_t& nid, const bool has_bias = false) {
+  void Dense(const size_t& nid, const bool has_bias = false, const bool has_relu=false) {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -319,7 +321,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Dense description.
     auto dense_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_inference, data_md,
                                                         weight_md, bias_md, dst_md);
-    auto dense_prim_desc = dnnl::inner_product_forward::primitive_desc(dense_desc, engine_);
+
+    // Enable ReLU
+    dnnl::post_ops ops;
+    if (has_relu) {
+      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
+    }
+    dnnl::primitive_attr attr;
+    attr.set_post_ops(ops);
+
+    auto dense_prim_desc = dnnl::inner_product_forward::primitive_desc(dense_desc, attr, engine_);
 
     auto dense = dnnl::inner_product_forward(dense_prim_desc);
     net_.push_back(dense);

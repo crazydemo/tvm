@@ -4,7 +4,7 @@ export KMP_AFFINITY=granularity=fine,noduplicates,compact,1,0
 OMP_NUM_THREADS=28 \
 KMP_AFFINITY=granularity=fine,noduplicates,compact,1,0 \
 numactl --physcpubind=0-27 --membind=0 \
-python $HOME/tvm/tutorials/my_trials/benchmark_byoc_dnnl.py --batch-size=128 #--check_acc=True
+python $HOME/tvm/tutorials/my_trials/benchmark_byoc_dnnl.py --check_acc=True
 
 ### check acc
 # numactl --physcpubind=0-27 --membind=0 \

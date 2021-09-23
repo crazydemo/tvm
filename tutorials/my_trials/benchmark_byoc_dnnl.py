@@ -21,7 +21,16 @@ from tvm.relay.build_module import bind_params_by_name
 from tvm.contrib.download import download_testdata
 from PIL import Image
 
-network_dict = {"resnet50":"ResNet50_v1b"}
+network_dict = {"resnet18":"ResNet18_v1b",
+                "resnet34":"ResNet34_v1b",
+                "resnet50":"ResNet50_v1b",
+                "resnet101":"ResNet101_v1b",
+                "resnet152":"ResNet152_v1b",
+                "vgg11":"VGG11",
+                "vgg13":"VGG13",
+                "vgg16":"VGG16",
+                "vgg19":"VGG19",
+                "VGG11_bn":"VGG11_bn",}
 
 translate_dict = {"abcd":"NCHW",
                 "Acdb8a": "OHWI8o",
@@ -213,13 +222,14 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     )
 
     seq = tvm.transform.Sequential(
-        [ 
+        [   
+            # tvm.transform.PrintIR(),
             relay.transform.CanonicalizeOps(),
             relay.transform.InferType(),
             relay.transform.SimplifyInference(),
             relay.transform.FoldConstant(),
             relay.transform.FoldScaleAxis(),
-
+            tvm.transform.PrintIR(),
             CustomPipeline(),
             relay.transform.FoldConstant(),
             
@@ -229,6 +239,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             relay.transform.AnnotateTarget("dnnl"),
             relay.transform.MergeCompilerRegions(),
             relay.transform.PartitionGraph(),
+            # tvm.transform.PrintIR(),
         ]
     )
 
@@ -255,6 +266,8 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         sample_for_mxnet = mx.ndarray.array(sample)
         mxnet_output = block(sample_for_mxnet)
         tvm_output = rt_mod.get_output(0)
+        # print("mxnet_output:{}".format(mxnet_output))
+        # print("tvm_output:{}".format(tvm_output))
         print("mse:{}".format(np.mean((tvm_output.asnumpy()-mxnet_output.asnumpy())**2)))
     elif profiling:
         from tvm.contrib.debugger import debug_executor as graph_executor
@@ -295,8 +308,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        choices=["resnet50"],
-        default="resnet50",
+        choices=["resnet50", "resnet18", "resnet34", "resnet101", "resnet152",
+                "vgg11", "vgg13", "vgg16", "vgg19", "VGG11_bn"],
+        default="VGG11_bn",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
