@@ -30,7 +30,10 @@ network_dict = {"resnet18":"ResNet18_v1b",
                 "vgg13":"VGG13",
                 "vgg16":"VGG16",
                 "vgg19":"VGG19",
-                "VGG11_bn":"VGG11_bn",}
+                "VGG11_bn":"VGG11_bn",
+                "VGG13_bn":"VGG13_bn",
+                "VGG16_bn":"VGG16_bn",
+                "VGG19_bn":"VGG19_bn",}
 
 translate_dict = {"abcd":"NCHW",
                 "Acdb8a": "OHWI8o",
@@ -68,7 +71,13 @@ class CustomPipeline:
         return res
 
     def rewrite_graph(self):
-        start = max(self.block_dict.keys())
+        try:
+            if(max(self.block_dict.keys())<max(self.merge_dict.keys())):
+                start = len(self.op_lst)-1
+            else:
+                start = max(self.block_dict.keys())
+        except:
+            start = max(self.block_dict.keys())
         new_node = self.op_lst[start]
         cur_node = self.op_lst[start]
         for i in range(start-1, -1, -1):
@@ -229,7 +238,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             relay.transform.SimplifyInference(),
             relay.transform.FoldConstant(),
             relay.transform.FoldScaleAxis(),
-            tvm.transform.PrintIR(),
+            # tvm.transform.PrintIR(),
             CustomPipeline(),
             relay.transform.FoldConstant(),
             
@@ -309,8 +318,9 @@ if __name__ == "__main__":
         "--network",
         type=str,
         choices=["resnet50", "resnet18", "resnet34", "resnet101", "resnet152",
-                "vgg11", "vgg13", "vgg16", "vgg19", "VGG11_bn"],
-        default="VGG11_bn",
+                "vgg11", "vgg13", "vgg16", "vgg19", 
+                "VGG11_bn", "VGG13_bn", "VGG16_bn", "VGG19_bn"],
+        default="VGG19_bn",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
