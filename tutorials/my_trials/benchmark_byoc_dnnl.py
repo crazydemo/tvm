@@ -255,7 +255,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         sample_for_mxnet = mx.ndarray.array(sample)
         mxnet_output = block(sample_for_mxnet)
         tvm_output = rt_mod.get_output(0)
-        print("acc:{}".format(np.mean(tvm_output.asnumpy()-mxnet_output.asnumpy())))
+        print("mse:{}".format(np.mean((tvm_output.asnumpy()-mxnet_output.asnumpy())**2)))
     elif profiling:
         from tvm.contrib.debugger import debug_executor as graph_executor
         rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
