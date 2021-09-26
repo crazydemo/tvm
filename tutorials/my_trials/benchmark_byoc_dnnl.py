@@ -30,10 +30,11 @@ network_dict = {"resnet18":"ResNet18_v1b",
                 "vgg13":"VGG13",
                 "vgg16":"VGG16",
                 "vgg19":"VGG19",
-                "VGG11_bn":"VGG11_bn",
-                "VGG13_bn":"VGG13_bn",
-                "VGG16_bn":"VGG16_bn",
-                "VGG19_bn":"VGG19_bn",}
+                "vgg11_bn":"VGG11_bn",
+                "vgg13_bn":"VGG13_bn",
+                "vgg16_bn":"VGG16_bn",
+                "vgg19_bn":"VGG19_bn",
+                "densenet121":"DenseNet121",}
 
 translate_dict = {"abcd":"NCHW",
                 "Acdb8a": "OHWI8o",
@@ -56,103 +57,124 @@ class CustomPipeline:
     """Simple test function to replace one argument to another."""
 
     def __init__(self):
-        # self.multiplier = multiplier
         self.cnt = 0
+        self.net_dict = {}
+        self.branch_post_op_dict = {} # dict for querying the post ops of the key node
+        self.branchid = {}
         self.merge_dict = {}
-        self.branch_dict = {}
-        self.block_dict = {}
         self.op_lst = []
+        self.net_lst = []
 
     # This function can define a pass.
     def transform_function(self, func, mod, ctx):
         self.merge_consecutive_add(func.body)
         res = self.rewrite_graph()
-        res = relay.Function([self.op_lst[-1]], res)
+        res = relay.Function([self.input], res)
         return res
 
-    def rewrite_graph(self):
-        try:
-            if(max(self.block_dict.keys())<max(self.merge_dict.keys())):
-                start = len(self.op_lst)-1
-            else:
-                start = max(self.block_dict.keys())
-        except:
-            start = max(self.block_dict.keys())
-        new_node = self.op_lst[start]
-        cur_node = self.op_lst[start]
-        for i in range(start-1, -1, -1):
-            
-            cur_node = self.op_lst[i]
-
-            if i+1 in self.block_dict.keys():
-                node_for_next_block = new_node
-            
-            if i in self.branch_dict.keys():
-                branch_lst = self.branch_dict[i]
-                tmp_new_node = node_for_next_block
-                for j in range(len(branch_lst)-2, -1, -1):
-                    tmp_cur_node = branch_lst[j]
-                    tmp_new_node = self.get_op(tmp_cur_node, tmp_new_node, tmp_cur_node.args[1])
-                new_node = self.get_op(cur_node, new_node, tmp_new_node)
-
-            elif i in self.merge_dict.keys():
-                new_node = self.get_op(cur_node, new_node, self.merge_dict[i])
-
-            elif cur_node.op.name=="add":
-                new_node = self.get_op(cur_node, new_node, cur_node.args[1])
-            elif cur_node.op.name=="nn.conv2d":
-                new_node = self.get_op(cur_node, new_node, cur_node.args[1], cur_node.attrs)
-            elif cur_node.op.name=="nn.dense":
-                new_node = self.get_op(cur_node, new_node, cur_node.args[1])
-            elif cur_node.op.name=="nn.batch_flatten":
-                new_node = self.get_op(cur_node, new_node)
-            else:
-                new_node = self.get_op(cur_node, new_node)
-        return new_node
-
     def merge_consecutive_add(self, node):
-        while node:
-            try:
-                if self.check_block(node):
-                    self.block_dict[self.cnt] = node
-                
-                elif self.check_consecutive_add(node):
-                    a1 = node
-                    a2 = a1.args[0]
-                    data = relay.add(a1.args[1], a2.args[1])
-                    self.merge_dict[self.cnt] = data
-                    node = a2
+        op_set, op_lst=set(),[]
+        cnt_branch = 0
+        op_lst.append(node)
+        while op_lst:
+            u = op_lst.pop()
+            if u not in op_set and not self.check_constant(u):
+                self.op_lst.append(self.cnt)
+                self.net_dict[self.cnt] = u
+                if self.check_Var(u):
+                    self.input = u
+                    self.net_lst = [self.op_lst]
+                    self.op_lst = []
+                    self.cnt += 1
+                    continue
+            else:
+                if u in op_set:
+                    cnt_branch += 1
+                    pre_op_idx = [key for key, value in self.net_dict.items() if value == u][0]
+                    self.branch_post_op_dict[pre_op_idx] = [pre_op_idx-1]
+                    self.branch_post_op_dict[pre_op_idx].append(self.op_lst[-1])
+                    self.net_lst.append(self.op_lst)
+                    self.branchid[self.op_lst[-1]] = cnt_branch
+                    self.op_lst = []
+                continue
+            op_set.add(u)
 
-                elif self.check_branch(node):
-                    tmp_node = node.args[1]
-                    self.branch_lst = [tmp_node]
-                    while (not self.check_block(tmp_node)):
-                        tmp_node = tmp_node.args[0]
-                        self.branch_lst.append(tmp_node)
-                    self.branch_dict[self.cnt] = self.branch_lst
+            if self.check_consecutive_add(u):
+                a1 = u
+                a2 = a1.args[0]
+                conv = a2.args[0]
+                data = relay.add(a1.args[1], a2.args[1])
+                op_lst.extend([data, conv])
+            else:
+                op_lst.extend(list(u.args)[::-1])
+            if self.check_branch(u):
+                self.merge_dict[self.cnt] = list(u.args)
+            self.cnt += 1
+        
+        ivd = dict((v, k) for k, v in self.net_dict.items())
+        for key, value in self.merge_dict.items():
+            tmp_lst = []
+            for v in value:
+                tmp_lst.append(ivd[v])
+            self.merge_dict[key] = tmp_lst
+
+        print("done")
+        print("merge_dict:", self.merge_dict)
+        print("branch", self.branch_post_op_dict)
+        print("branchid", self.branchid)
+        print("net_lst", self.net_lst)
+
+    def rewrite_graph(self):
+        main_idx = self.net_lst[0][-2]
+        while main_idx>=0:
+            if main_idx not in self.merge_dict.keys() and main_idx not in self.branch_post_op_dict.keys():
+                pre_node = self.net_dict[main_idx+1]
+                new_node = self.net_dict[main_idx]
+                new_node = self.get_op(new_node, pre_node)
+                self.net_dict[main_idx] = new_node
+
+            elif main_idx in self.branch_post_op_dict.keys():
+                pre_node = self.net_dict[main_idx+1]
+                new_node = self.net_dict[main_idx]
+                new_node = self.get_op(new_node, pre_node)
+                self.net_dict[main_idx] = new_node
+
+                pre_node = new_node
+                bid_lst = self.branch_post_op_dict[main_idx]
+                for i in range(1, len(bid_lst)):
+                    bid = bid_lst[i] # find the first op idx of the ith branch
+                    branch_op_lst = self.net_lst[self.branchid[bid]] # switch to the branch op lst
+                    for j in range(len(branch_op_lst)-1, -1, -1):
+                        new_node = self.net_dict[branch_op_lst[j]]
+                        new_node = self.get_op(new_node, pre_node)
+                        self.net_dict[branch_op_lst[j]] = new_node
+                        pre_node = new_node
+
+            elif main_idx in self.merge_dict.keys():
+                arg_lst = []
+                for a in self.merge_dict[main_idx]:
+                    arg_lst.append(self.net_dict[a])
+                new_node = self.net_dict[main_idx]
+                new_node = self.get_op(new_node, arg_lst=arg_lst)
+                self.net_dict[main_idx] = new_node
                 
-                self.op_lst.append(node)
-                node = node.args[0]
-                self.cnt += 1
-            except:
-                self.cnt = 0
-                break
+            main_idx -= 1
+        return new_node
 
     def check_consecutive_add(self, node):
         try:
+            # print("check ...")
             return node.op.name=='add' and len(node.type_args[1].shape)==3 and node.args[0].op.name=='add' and len(node.args[0].type_args[1].shape)==3
         except:
             return False
     
-    def check_block(self, node):
-        try:
-            return (node.op.name=='nn.relu' and not self.check_constant(node.args[0].args[1])) or node.op.name=='nn.max_pool2d'
-        except:
-            return False
-
     def check_branch(self, node):
         try:
-            return node.op.name=='add' and not self.check_constant(node.args[1])
+            cnt = 0
+            for i in range(len(node.args)):
+                if 'Call' in str(type(node.args[i])):
+                    cnt += 1
+            return cnt>=2
         except:
             return False
 
@@ -162,7 +184,23 @@ class CustomPipeline:
         except:
             return False
 
-    def get_op(self, node, *args):
+    def check_Var(self, node):
+        try:
+            return 'Var' in str(type(node))
+        except:
+            return False
+
+    def get_op(self, node, pre_node=None, arg_lst = None):
+        if arg_lst is not None:
+            args = arg_lst
+        else:
+            args = []
+            for a in node.args:
+                if 'Call' in str(type(a)):
+                    args.append(pre_node)
+                else:
+                    args.append(a)
+
         if node.op.name=='nn.conv2d':
             return relay.nn.conv2d(args[0], args[1], **node.attrs)
         elif node.op.name=='nn.relu':
@@ -319,8 +357,9 @@ if __name__ == "__main__":
         type=str,
         choices=["resnet50", "resnet18", "resnet34", "resnet101", "resnet152",
                 "vgg11", "vgg13", "vgg16", "vgg19", 
-                "VGG11_bn", "VGG13_bn", "VGG16_bn", "VGG19_bn"],
-        default="VGG19_bn",
+                "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
+                "densenet121"],
+        default="resnet18",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
