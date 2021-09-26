@@ -62,7 +62,6 @@ class CustomPipeline:
         self.branch_post_op_dict = {} # dict for querying the post ops of the key node
         self.branchid = {}
         self.merge_dict = {}
-        self.op_lst = []
         self.net_lst = []
 
     # This function can define a pass.
@@ -73,18 +72,18 @@ class CustomPipeline:
         return res
 
     def merge_consecutive_add(self, node):
-        op_set, op_lst=set(),[]
+        op_set, traversal_lst, tmp_op_lst = set(), [], []
         cnt_branch = 0
-        op_lst.append(node)
-        while op_lst:
-            u = op_lst.pop()
+        traversal_lst.append(node)
+        while traversal_lst:
+            u = traversal_lst.pop()
             if u not in op_set and not self.check_constant(u):
-                self.op_lst.append(self.cnt)
+                tmp_op_lst.append(self.cnt)
                 self.net_dict[self.cnt] = u
                 if self.check_Var(u):
                     self.input = u
-                    self.net_lst = [self.op_lst]
-                    self.op_lst = []
+                    self.net_lst = [tmp_op_lst]
+                    tmp_op_lst = []
                     self.cnt += 1
                     continue
             else:
@@ -92,10 +91,11 @@ class CustomPipeline:
                     cnt_branch += 1
                     pre_op_idx = [key for key, value in self.net_dict.items() if value == u][0]
                     self.branch_post_op_dict[pre_op_idx] = [pre_op_idx-1]
-                    self.branch_post_op_dict[pre_op_idx].append(self.op_lst[-1])
-                    self.net_lst.append(self.op_lst)
-                    self.branchid[self.op_lst[-1]] = cnt_branch
-                    self.op_lst = []
+                    self.net_lst.append(tmp_op_lst)
+                    if len(tmp_op_lst)!=0:
+                        self.branch_post_op_dict[pre_op_idx].append(tmp_op_lst[-1])
+                        self.branchid[tmp_op_lst[-1]] = cnt_branch
+                        tmp_op_lst = []
                 continue
             op_set.add(u)
 
@@ -104,9 +104,9 @@ class CustomPipeline:
                 a2 = a1.args[0]
                 conv = a2.args[0]
                 data = relay.add(a1.args[1], a2.args[1])
-                op_lst.extend([data, conv])
+                traversal_lst.extend([data, conv])
             else:
-                op_lst.extend(list(u.args)[::-1])
+                traversal_lst.extend(list(u.args)[::-1])
             if self.check_branch(u):
                 self.merge_dict[self.cnt] = list(u.args)
             self.cnt += 1
@@ -117,12 +117,6 @@ class CustomPipeline:
             for v in value:
                 tmp_lst.append(ivd[v])
             self.merge_dict[key] = tmp_lst
-
-        print("done")
-        print("merge_dict:", self.merge_dict)
-        print("branch", self.branch_post_op_dict)
-        print("branchid", self.branchid)
-        print("net_lst", self.net_lst)
 
     def rewrite_graph(self):
         main_idx = self.net_lst[0][-2]
@@ -163,7 +157,6 @@ class CustomPipeline:
 
     def check_consecutive_add(self, node):
         try:
-            # print("check ...")
             return node.op.name=='add' and len(node.type_args[1].shape)==3 and node.args[0].op.name=='add' and len(node.args[0].type_args[1].shape)==3
         except:
             return False
@@ -355,11 +348,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        choices=["resnet50", "resnet18", "resnet34", "resnet101", "resnet152",
+        choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                 "densenet121"],
-        default="resnet18",
+        default="densenet121",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
