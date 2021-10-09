@@ -106,9 +106,19 @@ class CustomPipeline:
                 data = relay.add(a1.args[1], a2.args[1])
                 traversal_lst.extend([data, conv])
             else:
-                traversal_lst.extend(list(u.args)[::-1])
+                if 'Tuple' not in str(type(u)):
+                    traversal_lst.extend(list(u.args)[::-1])
+                else:
+                    for i in range(len(u)-1, -1, -1):
+                        traversal_lst.append(u[i])
             if self.check_branch(u):
-                self.merge_dict[self.cnt] = list(u.args)
+                if 'Tuple' not in str(type(u)):
+                    self.merge_dict[self.cnt] = list(u.args)
+                else:
+                    concat_lst = []
+                    for i in u:
+                        concat_lst.append(i)
+                    self.merge_dict[self.cnt] = concat_lst
             self.cnt += 1
         
         ivd = dict((v, k) for k, v in self.net_dict.items())
@@ -184,6 +194,9 @@ class CustomPipeline:
             return False
 
     def get_op(self, node, pre_node=None, arg_lst = None):
+        if 'Tuple' in str(type(node)):
+            return relay.Tuple(arg_lst)
+
         if arg_lst is not None:
             args = arg_lst
         else:
@@ -198,8 +211,12 @@ class CustomPipeline:
             return relay.nn.conv2d(args[0], args[1], **node.attrs)
         elif node.op.name=='nn.relu':
             return relay.nn.relu(args[0])
+        elif node.op.name=='multiply':
+            return relay.multiply(args[0], args[1])
         elif node.op.name=='add':
             return relay.add(args[0], args[1])
+        elif node.op.name=='concatenate':
+            return relay.concatenate(pre_node, **node.attrs)
         elif node.op.name=='nn.max_pool2d':
             return relay.nn.max_pool2d(args[0], **node.attrs)
         elif node.op.name=='nn.global_avg_pool2d':
@@ -352,7 +369,7 @@ if __name__ == "__main__":
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                 "densenet121"],
-        default="densenet121",
+        default="vgg11_bn",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
