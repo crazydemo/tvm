@@ -116,8 +116,8 @@ class CustomPipeline:
                     self.merge_dict[self.cnt] = list(u.args)
                 else:
                     concat_lst = []
-                    for i in u:
-                        concat_lst.append(i)
+                    for i in range(len(u)):
+                        concat_lst.append(u[i])
                     self.merge_dict[self.cnt] = concat_lst
             self.cnt += 1
         
@@ -173,11 +173,14 @@ class CustomPipeline:
     
     def check_branch(self, node):
         try:
-            cnt = 0
-            for i in range(len(node.args)):
-                if 'Call' in str(type(node.args[i])):
-                    cnt += 1
-            return cnt>=2
+            if 'Tuple' not in str(type(node)):
+                cnt = 0
+                for i in range(len(node.args)):
+                    if 'Call' in str(type(node.args[i])):
+                        cnt += 1
+                return cnt>=2
+            else:
+                return True
         except:
             return False
 
@@ -219,8 +222,8 @@ class CustomPipeline:
             return relay.concatenate(pre_node, **node.attrs)
         elif node.op.name=='nn.max_pool2d':
             return relay.nn.max_pool2d(args[0], **node.attrs)
-        elif node.op.name=='nn.global_avg_pool2d':
-            return relay.nn.global_avg_pool2d(args[0], **node.attrs)
+        elif node.op.name=='nn.avg_pool2d':
+            return relay.nn.avg_pool2d(args[0], **node.attrs)
         elif node.op.name=='nn.batch_flatten':
             return relay.nn.batch_flatten(args[0])
         elif node.op.name=='nn.dense':
@@ -252,6 +255,7 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
 
     from tvm import relay
     res = relay.query_layout.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
+    # print(res)
 
     new_attrs = dict(attrs)
 
@@ -327,6 +331,8 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         # print("tvm_output:{}".format(tvm_output))
         print("mse:{}".format(np.mean((tvm_output.asnumpy()-mxnet_output.asnumpy())**2)))
     elif profiling:
+        import datetime
+        tic = datetime.datetime.now()
         from tvm.contrib.debugger import debug_executor as graph_executor
         rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
         sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
@@ -376,7 +382,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--target",
         type=str,
-        default="llvm -model=platinum-8124m -mcpu=skylake-avx512",
+        default="llvm",
         help="The compilation target.",
     )
     parser.add_argument("--dtype", type=str, default="float32", help="The data type.")
@@ -384,7 +390,7 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--batches", type=int, default=400)
     parser.add_argument("--profiling", type=bool, default=False)
-    parser.add_argument("--check_acc", type=bool, default=False)
+    parser.add_argument("--check_acc", type=bool, default=True)
     args = parser.parse_args()
 
     target = tvm.target.Target(args.target)
