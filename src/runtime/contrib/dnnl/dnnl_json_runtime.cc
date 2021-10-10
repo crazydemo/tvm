@@ -230,7 +230,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dims strides_dims = {SH, SW};
     dnnl::memory::dims padding_dims_l = {PH_L, PW_L};
     dnnl::memory::dims padding_dims_r = {PH_R, PW_R};
-
+    std::cout<<OC<<" "<<KH<<" "<<KW<<" "<<OH<<" "<<OW<<std::endl;
     // Memory descriptions.
     auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, src_df);
     auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, weight_df);

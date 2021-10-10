@@ -37,13 +37,15 @@ network_dict = {"resnet18":"ResNet18_v1b",
                 "densenet121":"DenseNet121",
                 "InceptionV3":"InceptionV3",}
 
-translate_dict = {"abcd":"NCHW",
+translate_data_dict = {"abcd":"NCHW",
+                "aBcd8b": "NCHW8c",
+                "aBcd16b": "NCHW16c",}
+translate_weight_dict = {
+                "abcd":"OIHW",
                 "Acdb8a": "OHWI8o",
                 "Acdb16a": "OHWI16o",
                 "ABcd8b8a": "OIHW8i8o",
-                "ABcd16b16a": "OIHW16i16o",
-                "aBcd8b": "NCHW8c",
-                "aBcd16b": "NCHW16c",}
+                "ABcd16b16a": "OIHW16i16o",}
 
 @tvm.instrument.pass_instrument
 class PrintIR:
@@ -64,10 +66,13 @@ class CustomPipeline:
         self.branchid = {}
         self.merge_dict = {}
         self.net_lst = []
+        self.flag_for_merge_add = False
 
     # This function can define a pass.
     def transform_function(self, func, mod, ctx):
         self.merge_consecutive_add(func.body)
+        if not self.flag_for_merge_add:
+            return func
         res = self.rewrite_graph()
         res = relay.Function([self.input], res)
         return res
@@ -106,6 +111,7 @@ class CustomPipeline:
                 conv = a2.args[0]
                 data = relay.add(a1.args[1], a2.args[1])
                 traversal_lst.extend([data, conv])
+                self.flag_for_merge_add = True
             else:
                 if 'Tuple' not in str(type(u)):
                     traversal_lst.extend(list(u.args)[::-1])
@@ -231,6 +237,8 @@ class CustomPipeline:
             return relay.nn.batch_flatten(args[0])
         elif node.op.name=='nn.dense':
             return relay.nn.dense(args[0], args[1], **node.attrs)
+        elif node.op.name=='nn.dropout':
+            return relay.nn.dropout(args[0], **node.attrs)
         else:
             return False
 
@@ -264,9 +272,9 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
 
     src_df, weight_df, dst_df = res.split(',')
 
-    new_attrs['data_layout'] = translate_dict[src_df]
-    new_attrs['kernel_layout'] = translate_dict[weight_df]
-    new_attrs['out_layout'] = translate_dict[dst_df]
+    new_attrs['data_layout'] = translate_data_dict[src_df]
+    new_attrs['kernel_layout'] = translate_weight_dict[weight_df]
+    new_attrs['out_layout'] = translate_data_dict[dst_df]
     return relay.nn.conv2d(data, weight, **new_attrs)
 
 def transform_image(image):
@@ -278,8 +286,10 @@ def transform_image(image):
 
 def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100, batches=400, dtype="float32", target="llvm"):
     ctx = tvm.cpu()
-
     input_shape = (batch_size, 3, 224, 224)
+    if network=="InceptionV3":
+        input_shape = (batch_size, 3, 300, 300)
+    
     block = gluoncv.model_zoo.get_model(network_dict[network], pretrained=True)
     mod, params = relay.frontend.from_mxnet(
         block, shape={"data": input_shape}, dtype=dtype
@@ -294,11 +304,14 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             relay.transform.FoldConstant(),
             relay.transform.FoldScaleAxis(),
             # tvm.transform.PrintIR(),
+
             CustomPipeline(),
             relay.transform.FoldConstant(),
+            # tvm.transform.PrintIR(),
             
-            relay.transform.AlterOpLayout(),
-            
+            # relay.transform.AlterOpLayout(),
+            # tvm.transform.PrintIR(),
+
             relay.transform.MergeComposite(pattern_table()),
             relay.transform.AnnotateTarget("dnnl"),
             relay.transform.MergeCompilerRegions(),
@@ -318,7 +331,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
         img_name = "cat.png"
         img_path = download_testdata(img_url, img_name, module="data")
-        image = Image.open(img_path).resize((224, 224))
+        image = Image.open(img_path).resize((input_shape[2], input_shape[3]))
         sample = transform_image(image)
 
         import tvm.contrib.graph_executor as graph_executor
