@@ -34,7 +34,8 @@ network_dict = {"resnet18":"ResNet18_v1b",
                 "vgg13_bn":"VGG13_bn",
                 "vgg16_bn":"VGG16_bn",
                 "vgg19_bn":"VGG19_bn",
-                "densenet121":"DenseNet121",}
+                "densenet121":"DenseNet121",
+                "InceptionV3":"InceptionV3",}
 
 translate_dict = {"abcd":"NCHW",
                 "Acdb8a": "OHWI8o",
@@ -224,6 +225,8 @@ class CustomPipeline:
             return relay.nn.max_pool2d(args[0], **node.attrs)
         elif node.op.name=='nn.avg_pool2d':
             return relay.nn.avg_pool2d(args[0], **node.attrs)
+        elif node.op.name=='nn.global_avg_pool2d':
+            return relay.nn.global_avg_pool2d(args[0], **node.attrs)
         elif node.op.name=='nn.batch_flatten':
             return relay.nn.batch_flatten(args[0])
         elif node.op.name=='nn.dense':
@@ -374,8 +377,8 @@ if __name__ == "__main__":
         choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
-                "densenet121"],
-        default="vgg11_bn",
+                "densenet121", "InceptionV3"],
+        default="InceptionV3",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")

@@ -210,7 +210,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0].size()>4)
       {
         OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
-        if (node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI16o")
+        if (node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI16o" || node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI8o")
         {
           OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
           KH = weight_shape[1];
