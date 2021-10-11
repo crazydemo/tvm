@@ -351,13 +351,13 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         tvm_output = rt_mod.get_output(0)
         # print("mxnet_output:{}".format(mxnet_output))
         # print("tvm_output:{}".format(tvm_output))
-        print("mse:{}".format(np.mean((tvm_output.asnumpy()-mxnet_output.asnumpy())**2)))
+        print("{} mse:{}".format(network, np.mean((tvm_output.asnumpy()-mxnet_output.asnumpy())**2)))
     elif profiling:
         import datetime
         tic = datetime.datetime.now()
         from tvm.contrib.debugger import debug_executor as graph_executor
         rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
-        sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+        sample = np.random.rand(input_shape[0], input_shape[1],input_shape[2], input_shape[3])#np.ones((batch_size, 3, 224, 224))#
         rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
         rt_mod.set_input(**params)
         total_time_lst = []
@@ -371,6 +371,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             print("{}/{}: gap:{:.4f}, reorder:{:.4f}".format(i, batches+warmup, gap, reorder))
             total_time = gap+reorder
             total_time_lst.append(total_time)
+        print("network:{}".format(network))
         print("all ops' execution time:{}".format(np.mean(total_time_lst[warmup::])))
         print("all ops' execution time:{}".format(np.mean(total_time_lst[warmup::])/1000))
         print("profiling time:{}".format(datetime.datetime.now()-tic))
@@ -396,8 +397,8 @@ if __name__ == "__main__":
         choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
-                "densenet121", "InceptionV3"],
-        default="InceptionV3",
+                "densenet121", "InceptionV3", "all"],
+        default="all",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
@@ -415,8 +416,17 @@ if __name__ == "__main__":
     parser.add_argument("--check_acc", type=bool, default=True)
     args = parser.parse_args()
 
+    if args.network == "all":
+        networks = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
+                    "vgg11", "vgg13", "vgg16", "vgg19", 
+                    "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
+                    "densenet121", 
+                    "InceptionV3"]
+    else:
+        networks = [args.network]
+
     target = tvm.target.Target(args.target)
 
-    # Benchmark
-    benchmark(args.network, args.batch_size, profiling=args.profiling,check_acc=args.check_acc,\
-     warmup=args.warmup, batches=args.batches, dtype=args.dtype, target=args.target)
+    for network in networks:
+        benchmark(network, args.batch_size, profiling=args.profiling,check_acc=args.check_acc,\
+        warmup=args.warmup, batches=args.batches, dtype=args.dtype, target=args.target)
