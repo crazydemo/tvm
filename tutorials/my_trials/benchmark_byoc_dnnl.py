@@ -21,6 +21,7 @@ from tvm.relay.build_module import bind_params_by_name
 from tvm.contrib.download import download_testdata
 from PIL import Image
 
+cnt_conv_num = 0
 network_dict = {"resnet18":"ResNet18_v1b",
                 "resnet34":"ResNet34_v1b",
                 "resnet50":"ResNet50_v1b",
@@ -245,7 +246,9 @@ class CustomPipeline:
 @relay.op.register_alter_op_layout("nn.conv2d", level=114)
 def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
-    
+    # global cnt_conv_num
+    # cnt_conv_num += 1
+    # print(cnt_conv_num)
     def get_shape(tensor):
         if 'Var' in str(type(tensor)):
             return tensor.type_annotation.concrete_shape
@@ -256,15 +259,17 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
         else:
             return (-1, -1, -1, -1)
     
+    if len(get_shape(data))>4 or len(get_shape(weight))>4 or len(get_shape(out_type))>4:
+        return relay.nn.conv2d(data, weight, **attrs)
+
     N, IC, IH, IW = get_shape(data)
     OC, IC, KH, KW = get_shape(weight)
     N, _, OH, OW = get_shape(out_type)
-    PH_L, PH_R, PW_L, PW_R = attrs.padding
+    PH_L, PW_L, PH_R, PW_R = attrs.padding
     PH_L, PH_R, PW_L, PW_R = int(PH_L), int(PH_R), int(PW_L), int(PW_R)
     SH, SW = attrs.strides
     SH, SW = int(SH), int(SW)
 
-    from tvm import relay
     res = relay.query_layout.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
     # print(res)
 
@@ -309,7 +314,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             relay.transform.FoldConstant(),
             # tvm.transform.PrintIR(),
             
-            # relay.transform.AlterOpLayout(),
+            relay.transform.AlterOpLayout(),
             # tvm.transform.PrintIR(),
 
             relay.transform.MergeComposite(pattern_table()),
