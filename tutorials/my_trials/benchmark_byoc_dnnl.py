@@ -397,7 +397,7 @@ if __name__ == "__main__":
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                 "densenet121", "InceptionV3"],
-        default="densenet121",
+        default="InceptionV3",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")

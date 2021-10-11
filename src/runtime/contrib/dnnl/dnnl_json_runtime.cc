@@ -88,9 +88,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
     }
     // Invoke the engine through intepreting the stream.
-    std::cout<<"net_.size():"<<net_.size()<<std::endl;
+    // std::cout<<"net_.size():"<<net_.size()<<std::endl;
     for (size_t i = 0; i < net_.size(); ++i) {
       net_.at(i).execute(stream_, net_args_.at(i));
+      // std::cout<<"run:"<<i<<std::endl;
     }
     stream_.wait();
   }
@@ -170,8 +171,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   void Conv2d(const size_t& nid, const bool has_relu = false, const bool has_bias = false, const bool has_sum = false) {
     auto node = nodes_[nid];
-    cnt_conv += 1;
-    std::cout<<cnt_conv<<std::endl;
+    // cnt_conv += 1;
+    // std::cout<<cnt_conv<<std::endl;
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
     auto weight_entry = node.GetInputs()[1];
@@ -187,18 +188,18 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if(node.GetAttr<std::vector<std::string>>("out_layout")[0].size()!=0){
       dst_df = layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
     }
-    std::cout<<"conv"<<std::endl;
-    std::cout<<"input:";
-    for (auto i: input_shape){
-      std::cout<<i<<" ";
-    }
-    std::cout<<std::endl;
+    // std::cout<<"conv"<<std::endl;
+    // std::cout<<"input:";
+    // for (auto i: input_shape){
+    //   std::cout<<i<<" ";
+    // }
+    // std::cout<<std::endl;
 
-    std::cout<<"weight:";
-    for (auto i: weight_shape){
-      std::cout<<i<<" ";
-    }
-    std::cout<<std::endl;
+    // std::cout<<"weight:";
+    // for (auto i: weight_shape){
+    //   std::cout<<i<<" ";
+    // }
+    // std::cout<<std::endl;
 
     // std::cout<<"raw:"<<IC<<" "<<IH<<" "<<IW<<" "<<OC<<" "<<KH<<" "<<KW<<" "<<PW_L<<" "<<PW_R<<" "<<PH_L<<" "<<PH_R<<" "<<SH<<" "<<SW<<" "<<OH<<" "<<OW<<std::endl;
     dnnl::memory::dim N = input_shape[0],       // batch size
@@ -235,7 +236,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         }
     }
 
-    std::cout<<"recompute:"<<IC<<" "<<IH<<" "<<IW<<" "<<OC<<" "<<KH<<" "<<KW<<" "<<PW_L<<" "<<PW_R<<" "<<PH_L<<" "<<PH_R<<" "<<SH<<" "<<SW<<" "<<OH<<" "<<OW<<std::endl;
+    // std::cout<<"recompute:"<<IC<<" "<<IH<<" "<<IW<<" "<<OC<<" "<<KH<<" "<<KW<<" "<<PW_L<<" "<<PW_R<<" "<<PH_L<<" "<<PH_R<<" "<<SH<<" "<<SW<<" "<<OH<<" "<<OW<<std::endl;
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
     dnnl::memory::dims weights_dims = {OC, IC, KH, KW};
@@ -338,7 +339,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Dense description.
     auto dense_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_inference, data_md,
                                                         weight_md, bias_md, dst_md);
-    std::cout<<"dense"<<std::endl;
+    // std::cout<<"dense"<<std::endl;
     // Enable ReLU
     dnnl::post_ops ops;
     if (has_relu) {
@@ -447,7 +448,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto relu_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_inference,
                                                  dnnl::algorithm::eltwise_relu, data_md, 0);
 
-    std::cout<<"relu"<<std::endl;
+    // std::cout<<"relu"<<std::endl;
     auto relu_prim_desc = dnnl::eltwise_forward::primitive_desc(relu_desc, engine_);
     // ICHECK(data_md == relu_prim_desc.dst_desc());
 
@@ -481,7 +482,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     }
     
-    std::cout<<"add"<<std::endl;
+    // std::cout<<"add"<<std::endl;
     ICHECK(data_dims[0] == data_dims[1]);
     auto out_md = data_mds[0];
     JSONGraphNodeEntry out_entry(nid, 0);
@@ -527,16 +528,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       data_shape = new_data_shape;
       data_md = dnnl::memory::desc({data_shape, dt::f32, data_format});
     }
-      for(auto i: data_shape){
-        std::cout<<i<<" ";
-      }
-      std::cout<<std::endl;
+      // for(auto i: data_shape){
+      //   std::cout<<i<<" ";
+      // }
+      // std::cout<<std::endl;
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
     }
     
     auto concat_prim_desc = dnnl::concat::primitive_desc(axis, data_mds, engine_);
-    std::cout<<"concat"<<std::endl;
+    // std::cout<<"concat"<<std::endl;
     auto concat = dnnl::concat(concat_prim_desc);
     net_.push_back(concat);
     
@@ -570,13 +571,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dim N = input_shape[0],
       IC = input_shape[1],
       IH = input_shape[2],
-      IW = input_shape[2],
+      IW = input_shape[3],
       KH = pool_size0,
       KW = pool_size1,
-      PH_L = std::stoi(str_padding[1]),
-      PH_R = std::stoi(str_padding[3]),
-      PW_L = std::stoi(str_padding[0]),
-      PW_R = std::stoi(str_padding[2]),
+      PW_L = std::stoi(str_padding[1]),
+      PW_R = std::stoi(str_padding[3]),
+      PH_L = std::stoi(str_padding[0]),
+      PH_R = std::stoi(str_padding[2]),
       SH = std::stoi(str_strides[0]),
       SW = std::stoi(str_strides[1]),
       DH = dilation0,
@@ -591,7 +592,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
-    //dnnl::memory::dims kernel_dims = {OC, IC, KH, KW};
     dnnl::memory::dims kernel_dims = {KH, KW}; // modified
     dnnl::memory::dims dst_dims = {N, IC, OH, OW};
     dnnl::memory::dims strides_dims = {SH, SW};
@@ -599,6 +599,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dims padding_dims_r = {PH_R, PW_R};
     dnnl::memory::dims dilation = {DH, DW};
 
+    // std::cout<<"maxpool"<<std::endl;
+    // std::cout<<"input:";
+    // for (auto i: input_shape){
+    //   std::cout<<i<<" ";
+    // }
+    // std::cout<<std::endl;
     // Memory descriptions.
     auto pool_src_md = dnnl::memory::desc(src_dims, dt::f32, src_df);
     auto pool_dst_md = dnnl::memory::desc(dst_dims, dt::f32, dst_df);
@@ -611,7 +617,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       pool_src_md, pool_dst_md, strides_dims, kernel_dims,
       padding_dims_l, padding_dims_r
     );
-    std::cout<<"maxpool"<<std::endl;
+    // std::cout<<"maxpool"<<std::endl;
 
     auto maxpool_prim_desc = dnnl::pooling_forward::primitive_desc(maxpool_desc, engine_);
 
@@ -699,7 +705,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       padding_dims_l, padding_dims_r
     );
 
-    std::cout<<"avgpool"<<std::endl;
+    // std::cout<<"avgpool"<<std::endl;
 
     auto avgpool_prim_desc = dnnl::pooling_forward::primitive_desc(avgpool_desc, engine_, true);//allow_enpty=true
 

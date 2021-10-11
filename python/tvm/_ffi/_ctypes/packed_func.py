@@ -227,7 +227,7 @@ class PackedFuncBase(object):
         #start = time.time()
         ret_val = TVMValue()
         ret_tcode = ctypes.c_int()
-        start = time.time()
+        # start = time.time()
         if (
             _LIB.TVMFuncCall(
                 self.handle,
