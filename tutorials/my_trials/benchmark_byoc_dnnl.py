@@ -73,6 +73,7 @@ class CustomPipeline:
     def transform_function(self, func, mod, ctx):
         self.merge_consecutive_add(func.body)
         if not self.flag_for_merge_add:
+            print("not change graph")
             return func
         res = self.rewrite_graph()
         res = relay.Function([self.input], res)
@@ -396,7 +397,7 @@ if __name__ == "__main__":
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                 "densenet121", "InceptionV3"],
-        default="InceptionV3",
+        default="densenet121",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")

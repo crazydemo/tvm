@@ -67,9 +67,9 @@ _register_external_op_helper("nn.relu")
 # _register_external_op_helper("subtract")
 # _register_external_op_helper("multiply")
 
-_register_external_op_helper("concatenate")
-_register_external_op_helper("nn.max_pool2d")
-_register_external_op_helper("nn.avg_pool2d")
+# _register_external_op_helper("concatenate")
+# _register_external_op_helper("nn.max_pool2d")
+# _register_external_op_helper("nn.avg_pool2d")
 
 
 def make_pattern(with_bias=True, with_relu=True):
