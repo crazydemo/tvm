@@ -379,7 +379,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     else:
         import tvm.contrib.graph_executor as graph_executor
         rt_mod = graph_executor.create(json, lib, ctx)
-        sample = np.random.rand(batch_size, 3, 224, 224)#np.ones((batch_size, 3, 224, 224))#
+        sample = np.random.rand(input_shape[0], input_shape[1],input_shape[2], input_shape[3])
         rt_mod.set_input("data", tvm.nd.array(sample.astype("float32")))
         rt_mod.set_input(**params)
         for i in range(batches+warmup):
@@ -398,7 +398,7 @@ if __name__ == "__main__":
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                 "densenet121", "InceptionV3", "all"],
-        default="all",
+        default="resnet18",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
@@ -413,7 +413,7 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--batches", type=int, default=400)
     parser.add_argument("--profiling", type=bool, default=False)
-    parser.add_argument("--check_acc", type=bool, default=True)
+    parser.add_argument("--check_acc", type=bool, default=False)
     args = parser.parse_args()
 
     if args.network == "all":
