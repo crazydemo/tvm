@@ -38,15 +38,15 @@ network_dict = {"resnet18":"ResNet18_v1b",
                 "densenet121":"DenseNet121",
                 "InceptionV3":"InceptionV3",}
 
-translate_data_dict = {"abcd":"NCHW",
-                "aBcd8b": "NCHW8c",
-                "aBcd16b": "NCHW16c",}
-translate_weight_dict = {
-                "abcd":"OIHW",
-                "Acdb8a": "OHWI8o",
-                "Acdb16a": "OHWI16o",
-                "ABcd8b8a": "OIHW8i8o",
-                "ABcd16b16a": "OIHW16i16o",}
+data_dic = {"a":"N",
+            "b":"C",
+            "c":"H",
+            "d":"W",}
+
+weight_dic = {"a":"O",
+              "b":"I",
+              "c":"H",
+              "d":"W",}
 
 @tvm.instrument.pass_instrument
 class PrintIR:
@@ -73,7 +73,7 @@ class CustomPipeline:
     def transform_function(self, func, mod, ctx):
         self.merge_consecutive_add(func.body)
         if not self.flag_for_merge_add:
-            print("not change graph")
+            print("no consecutive add")
             return func
         res = self.rewrite_graph()
         res = relay.Function([self.input], res)
@@ -247,9 +247,6 @@ class CustomPipeline:
 @relay.op.register_alter_op_layout("nn.conv2d", level=114)
 def alter_conv2d(attrs, inputs, tinfos, out_type):
     data, weight = inputs
-    # global cnt_conv_num
-    # cnt_conv_num += 1
-    # print(cnt_conv_num)
     def get_shape(tensor):
         if 'Var' in str(type(tensor)):
             return tensor.type_annotation.concrete_shape
@@ -258,6 +255,8 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
         elif 'TensorType' in str(type(tensor)):
             return tensor.concrete_shape
         else:
+            if "pad" in tensor.op.name:
+                return tensor.type_args[0].concrete_shape
             return (-1, -1, -1, -1)
     
     if len(get_shape(data))>4 or len(get_shape(weight))>4 or len(get_shape(out_type))>4:
@@ -265,22 +264,34 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
 
     N, IC, IH, IW = get_shape(data)
     OC, IC, KH, KW = get_shape(weight)
-    N, _, OH, OW = get_shape(out_type)
-    PH_L, PW_L, PH_R, PW_R = attrs.padding
-    PH_L, PH_R, PW_L, PW_R = int(PH_L), int(PH_R), int(PW_L), int(PW_R)
-    SH, SW = attrs.strides
-    SH, SW = int(SH), int(SW)
+    N, OC, OH, OW = get_shape(out_type)
+    PH_L, PW_L, PH_R, PW_R = attrs.get_int_tuple("padding")
+    SH, SW = attrs.get_int_tuple("strides")
+    dilation = attrs.get_int_tuple("dilation")
 
     res = relay.query_layout.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
-    # print(res)
-
     new_attrs = dict(attrs)
 
     src_df, weight_df, dst_df = res.split(',')
 
-    new_attrs['data_layout'] = translate_data_dict[src_df]
-    new_attrs['kernel_layout'] = translate_weight_dict[weight_df]
-    new_attrs['out_layout'] = translate_data_dict[dst_df]
+    def trans_data(input_data, is_weight=False):
+        dic = data_dic
+        res = input_data
+        if is_weight:
+            dic = weight_dic
+                
+        for key, value in dic.items():
+            if key.upper() in input_data:
+                res = res.replace(key.upper(), value, 1)
+                res = res.replace(key, value.lower(), 1)
+            else:
+                res = res.replace(key, value, 1)
+        return res
+
+    new_attrs['data_layout'] = trans_data(src_df, is_weight=False)
+    new_attrs['kernel_layout'] = trans_data(weight_df, is_weight=True)
+    new_attrs['out_layout'] = trans_data(dst_df, is_weight=False)
+
     return relay.nn.conv2d(data, weight, **new_attrs)
 
 def transform_image(image):
@@ -316,9 +327,11 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             # tvm.transform.PrintIR(),
             
             relay.transform.AlterOpLayout(),
+            relay.transform.FoldConstant(),
             # tvm.transform.PrintIR(),
 
             relay.transform.MergeComposite(pattern_table()),
+            # tvm.transform.PrintIR(),
             relay.transform.AnnotateTarget("dnnl"),
             relay.transform.MergeCompilerRegions(),
             relay.transform.PartitionGraph(),
@@ -331,7 +344,6 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         mod["main"] = bind_params_by_name(mod["main"], params)
     with tvm.transform.PassContext(opt_level=3):#, instruments=[PrintIR()]):# 
         json, lib, params = relay.build(seq(mod), target=target, params=params)
-    #exe =  relay.vm.compile(mod, target="llvm", params=params)
 
     if check_acc:
         img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
@@ -339,6 +351,8 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         img_path = download_testdata(img_url, img_name, module="data")
         image = Image.open(img_path).resize((input_shape[2], input_shape[3]))
         sample = transform_image(image)
+        if batch_size>1:
+            sample = np.random.rand(input_shape[0], input_shape[1],input_shape[2], input_shape[3])
 
         import tvm.contrib.graph_executor as graph_executor
         rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
@@ -398,7 +412,7 @@ if __name__ == "__main__":
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                 "densenet121", "InceptionV3", "all"],
-        default="resnet18",
+        default="all",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="The batch size")
@@ -410,15 +424,15 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dtype", type=str, default="float32", help="The data type.")
     
-    parser.add_argument("--warmup", type=int, default=100)
-    parser.add_argument("--batches", type=int, default=400)
+    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--batches", type=int, default=100)
     parser.add_argument("--profiling", type=bool, default=False)
-    parser.add_argument("--check_acc", type=bool, default=False)
+    parser.add_argument("--check_acc", type=bool, default=True)
     args = parser.parse_args()
 
     if args.network == "all":
         networks = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
-                    "vgg11", "vgg13", "vgg16", "vgg19", 
+                    # "vgg11", "vgg13", "vgg16", "vgg19", 
                     "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                     "densenet121", 
                     "InceptionV3"]

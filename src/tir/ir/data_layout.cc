@@ -323,7 +323,18 @@ inline Array<PrimExpr> TransformShape(const Array<PrimExpr>& src_shape,
       if (symbolic_var_set.count(i)) {
         result.push_back(tir::Any());
       } else {
-        result.push_back(ana.Simplify(tir::Substitute(rule, bind_map)));
+        if (!LayoutAxis::Get(target_axis[target_axis.size()-1]).IsPrimal() && i==0 and target_axis[target_axis.size()-1]->dom->extent.as<IntImmNode>()->value!=16){
+          if (src_shape[i].as<IntImmNode>()->value%target_axis[target_axis.size()-1]->dom->extent.as<IntImmNode>()->value!=0){
+            rule = add(rule, PrimExpr(1));
+            result.push_back(ana.Simplify(tir::Substitute(rule, bind_map)));
+          }
+          else{
+            result.push_back(ana.Simplify(tir::Substitute(rule, bind_map)));
+          }
+        }
+        else{
+          result.push_back(ana.Simplify(tir::Substitute(rule, bind_map)));
+        }
       }
     }
   }

@@ -48,17 +48,21 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
  public:
   std::map<std::string, tag> layout_dict {
-    {"NCHW16c", tag::nChw16c}, //tag::aBcd16b
-    {"OIHW16o16i", tag::OIhw16o16i},
-    {"OIHW16i16o", tag::OIhw16i16o},
-    {"OIHW16o", tag::Oihw16o},
-    {"OHWI16o", tag::Ohwi16o},
-    {"NCHW", tag::nchw},//tag::abcd
-    {"OIHW", tag::oihw},//tag::abcd
-    {"NCHW8c", tag::nChw8c}, //tag::aBcd8b
-    {"OIHW8o8i", tag::OIhw8o8i},
-    {"OIHW8i8o", tag::OIhw8i8o},
-    {"OHWI8o", tag::Ohwi8o},//tag::Acdb8a
+    {"NCHW", tag::abcd},//tag::abcd
+    {"OIHW", tag::abcd},//tag::abcd
+    {"NCHW16c", tag::aBcd16b}, //tag::aBcd16b
+    {"NCHW8c", tag::aBcd8b}, //tag::aBcd8b
+    {"OIHW16o16i", tag::ABcd16a16b},//OIhw16o16i
+    {"OIHW16i16o", tag::ABcd16b16a},
+    {"OIHW8o8i", tag::ABcd8a8b},
+    {"OIHW8i8o", tag::ABcd8b8a},
+    
+    {"NHWC", tag::acdb},
+    {"OHWI64o", tag::Acdb64a},
+    {"OHWI48o", tag::Acdb48a},
+    {"OHWI32o", tag::Acdb32a},
+    {"OHWI16o", tag::Acdb16a},
+    {"OHWI8o", tag::Acdb8a},
     };
 
   DNNLJSONRuntime(const std::string& symbol_name, const std::string& graph_json,
@@ -171,9 +175,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   void Conv2d(const size_t& nid, const bool has_relu = false, const bool has_bias = false, const bool has_sum = false) {
     auto node = nodes_[nid];
-    // cnt_conv += 1;
-    // std::cout<<cnt_conv<<std::endl;
-    // Setup attributes.
     auto data_entry = node.GetInputs()[0];
     auto weight_entry = node.GetInputs()[1];
     dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_]; 
@@ -183,60 +184,39 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dim groups = std::stoi(node.GetAttr<std::vector<std::string>>("groups")[0]);
     auto src_df = layout_dict[node.GetAttr<std::vector<std::string>>("data_layout")[0]];
     auto weight_df = layout_dict[node.GetAttr<std::vector<std::string>>("kernel_layout")[0]];
-    auto dst_df = src_df;//layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
+    auto dst_df = layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
+    std::vector<std::string> outC = node.GetAttr<std::vector<std::string>>("channels");
 
-    if(node.GetAttr<std::vector<std::string>>("out_layout")[0].size()!=0){
-      dst_df = layout_dict[node.GetAttr<std::vector<std::string>>("out_layout")[0]];
-    }
-    // std::cout<<"conv"<<std::endl;
-    // std::cout<<"input:";
-    // for (auto i: input_shape){
-    //   std::cout<<i<<" ";
-    // }
-    // std::cout<<std::endl;
-
-    // std::cout<<"weight:";
-    // for (auto i: weight_shape){
-    //   std::cout<<i<<" ";
-    // }
-    // std::cout<<std::endl;
-
-    // std::cout<<"raw:"<<IC<<" "<<IH<<" "<<IW<<" "<<OC<<" "<<KH<<" "<<KW<<" "<<PW_L<<" "<<PW_R<<" "<<PH_L<<" "<<PH_R<<" "<<SH<<" "<<SW<<" "<<OH<<" "<<OW<<std::endl;
     dnnl::memory::dim N = input_shape[0],       // batch size
-        IC = input_shape[1],                    // input channels
-        IH = input_shape[2],                    // input height
-        IW = input_shape[3],                    // input width
-        OC = weight_shape[0],                   // output channels
-        KH = weight_shape[2],                   // weight height
-        KW = weight_shape[3],                   // weight width
-        PW_L = std::stoi(str_padding[1]),       // height padding: left
-        PW_R = std::stoi(str_padding[3]),       // height padding: right
-        PH_L = std::stoi(str_padding[0]),       // width padding: left
-        PH_R = std::stoi(str_padding[2]),       // width padding: right
+        IH = input_shape[1],                    // input height
+        IW = input_shape[2],                    // input width
+        IC = input_shape[3],                    // input channels
+        OC = std::stoi(outC[0]),                // output channels
+        KH = weight_shape[1],                   // weight height
+        KW = weight_shape[2],                   // weight width
+        PH_L = std::stoi(str_padding[0]),       // height padding: left
+        PH_R = std::stoi(str_padding[2]),       // height padding: right
+        PW_L = std::stoi(str_padding[1]),       // width padding: left
+        PW_R = std::stoi(str_padding[3]),       // width padding: right
         SH = std::stoi(str_strides[0]),         // height-wise stride
-        SW = std::stoi(str_strides[1]),         // weight-wise stride
-        OH = (IH - KH + PH_L + PH_R) / SH + 1,  // output height
-        OW = (IW - KW + PW_L + PW_R) / SW + 1;  // output width
-
-    if(node.GetAttr<std::vector<std::string>>("data_layout")[0].size()>4)
-      {
-        IC = input_shape[1]*input_shape[4];                   // input channels
-    }
-
-    if(node.GetAttr<std::vector<std::string>>("kernel_layout")[0].size()>4)
-      {
-        OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
-        if (node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI16o" || node.GetAttr<std::vector<std::string>>("kernel_layout")[0]=="OHWI8o")
-        {
-          OC = weight_shape[0]*weight_shape[weight_shape.size()-1];
-          KH = weight_shape[1];
-          KW = weight_shape[2];
-          OH = (IH - KH + PH_L + PH_R) / SH + 1;
-          OW = (IW - KW + PW_L + PW_R) / SW + 1;
+        SW = std::stoi(str_strides[1]);         // weight-wise stride
+    
+    if (node.GetAttr<std::vector<std::string>>("data_layout")[0].substr(0,4)=="NCHW"){
+        IC = input_shape[1];
+        IH = input_shape[2];
+        IW = input_shape[3];
+        if (input_shape.size()==5){
+          IC = IC * input_shape[input_shape.size()-1];
         }
     }
+    if (node.GetAttr<std::vector<std::string>>("kernel_layout")[0].substr(0,4)=="OIHW"){
+        KH = weight_shape[2];
+        KW = weight_shape[3];
+    }
 
-    // std::cout<<"recompute:"<<IC<<" "<<IH<<" "<<IW<<" "<<OC<<" "<<KH<<" "<<KW<<" "<<PW_L<<" "<<PW_R<<" "<<PH_L<<" "<<PH_R<<" "<<SH<<" "<<SW<<" "<<OH<<" "<<OW<<std::endl;
+    dnnl::memory::dim OH = (IH - KH + PH_L + PH_R) / SH + 1,  // output height
+                      OW = (IW - KW + PW_L + PW_R) / SW + 1;  // output width
+
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
     dnnl::memory::dims weights_dims = {OC, IC, KH, KW};
@@ -252,20 +232,24 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Memory descriptions.
     auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, src_df);
     auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, weight_df);
-    auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
+    auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::x);
     auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, dst_df);
 
     // Covn2d description.
     auto conv_desc = dnnl::convolution_forward::desc(
         dnnl::prop_kind::forward_inference, dnnl::algorithm::convolution_direct, conv_src_md,
         conv_weights_md, conv_bias_md, conv_dst_md, strides_dims, padding_dims_l, padding_dims_r);
-    // std::cout<<"conv"<<std::endl;
+    if (!has_bias){
+       conv_desc = dnnl::convolution_forward::desc(
+        dnnl::prop_kind::forward_inference, dnnl::algorithm::convolution_direct, conv_src_md,
+        conv_weights_md, conv_dst_md, strides_dims, padding_dims_l, padding_dims_r);
+    }
 
     // Enable ReLU
     dnnl::primitive_attr attr;
     dnnl::post_ops ops;
     if (has_sum) {
-      ops.append_sum(1.f);//, dt::f32);
+      ops.append_sum(1.f);
       attr.set_post_ops(ops);
     }
     if (has_relu) {
@@ -290,11 +274,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv2d_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
-      BindDNNLMemory(bias_entry, conv2d_bias_memory);
-    } else {
-      float bias[OC] = {0};
-      write_to_dnnl_memory(bias, conv2d_bias_memory, OC * sizeof(float));
-    }
+      conv2d_bias_memory = BindDNNLMemory(bias_entry, {bias_dims, dt::f32, tag::x});
+    } 
 
     // Output memory.
     JSONGraphNodeEntry out_entry(nid, 0);
@@ -305,10 +286,18 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     }
       BindDNNLMemory(out_entry, conv2d_dst_memory);
     // Bind memory buffers.
-    net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
+    if (has_bias){
+      net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
                          {DNNL_ARG_WEIGHTS, conv2d_weights_memory},
                          {DNNL_ARG_BIAS, conv2d_bias_memory},
                          {DNNL_ARG_DST, conv2d_dst_memory}});
+    }
+    else{
+      net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
+                         {DNNL_ARG_WEIGHTS, conv2d_weights_memory},
+                         {DNNL_ARG_DST, conv2d_dst_memory}});
+    }
+    
   }
 
   void Dense(const size_t& nid, const bool has_bias = false, const bool has_relu=false) {
@@ -339,7 +328,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Dense description.
     auto dense_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_inference, data_md,
                                                         weight_md, bias_md, dst_md);
-    // std::cout<<"dense"<<std::endl;
+    if (!has_bias){
+      dense_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_inference, data_md,
+                                                        weight_md, dst_md);
+    }
     // Enable ReLU
     dnnl::post_ops ops;
     if (has_relu) {
@@ -360,17 +352,21 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
       BindDNNLMemory(bias_entry, bias_memory);
-    } else {
-      float bias[OC] = {0};
-      write_to_dnnl_memory(bias, bias_memory, OC * sizeof(float));
-    }
+    } 
     JSONGraphNodeEntry out_entry(nid, 0);
     auto dst_memory = BindDNNLMemory(out_entry, dense_prim_desc.dst_desc());
-
-    net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+    if (has_bias){
+      net_args_.push_back({{DNNL_ARG_SRC, data_memory},
                          {DNNL_ARG_WEIGHTS, weight_memory},
                          {DNNL_ARG_BIAS, bias_memory},
                          {DNNL_ARG_DST, dst_memory}});
+    }
+    else{
+      net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                         {DNNL_ARG_WEIGHTS, weight_memory},
+                         {DNNL_ARG_DST, dst_memory}});
+    }
+    
   }
 
   void BatchNorm(const size_t& nid) {
@@ -520,38 +516,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     
     for (auto entry : node.GetInputs()) {
       auto data_shape = nodes_[entry.id_].GetOpShape()[entry.index_];
-      // std::cout<<"concat raw "<<std::endl;
-      // for(auto i: data_shape){
-      //   std::cout<<i<<" ";
-      // }
-      // std::cout<<std::endl;
       dnnl::memory::desc data_md = GenDNNLMemDescByShape(data_shape, dt::f32);
-      if(data_shape.size()>4)
-    {
-      auto data_format = tag::aBcd8b;
-      if(data_shape[data_shape.size()-1]==16){
-        data_format = tag::aBcd16b;
+        data_mds.push_back(data_md);
+        data_memories.push_back(BindDNNLMemory(entry, data_md));
       }
-      
-      data_shape[1] = data_shape[1] * data_shape[data_shape.size()-1];
-      dnnl::memory::dims new_data_shape{1,2,3,4};
-      for(int i=0; i<new_data_shape.size(); i++)
-      {new_data_shape[i] = data_shape[i];}
-      data_shape = new_data_shape;
-      data_md = dnnl::memory::desc({data_shape, dt::f32, data_format});
-    }
-
-    // std::cout<<"concat"<<std::endl;
-    //   for(auto i: data_shape){
-    //     std::cout<<i<<" ";
-    //   }
-    //   std::cout<<std::endl;
-      data_mds.push_back(data_md);
-      data_memories.push_back(BindDNNLMemory(entry, data_md));
-    }
     
     auto concat_prim_desc = dnnl::concat::primitive_desc(axis, data_mds, engine_);
-    // std::cout<<"concat"<<std::endl;
     auto concat = dnnl::concat(concat_prim_desc);
     net_.push_back(concat);
     
@@ -595,15 +565,24 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       SH = std::stoi(str_strides[0]),
       SW = std::stoi(str_strides[1]),
       DH = dilation0,
-      DW = dilation1,
-      OH = (IH - KH + PH_L + PH_R) / SH + 1,
-      OW = (IW - KW + PW_L + PW_R) / SW + 1;
+      DW = dilation1;
+      
 
     if(node.GetAttr<std::vector<std::string>>("layout")[0].size()>4)
       {
         IC = input_shape[1]*input_shape[4];                    // input channels
     }
 
+    if(node.GetAttr<std::vector<std::string>>("layout")[0]=="NHWC")
+      {
+        IC = input_shape[3];
+        IH = input_shape[1];
+        IW = input_shape[2];
+    }
+
+    dnnl::memory::dim OH = (IH - KH + PH_L + PH_R) / SH + 1,
+                      OW = (IW - KW + PW_L + PW_R) / SW + 1;
+    
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
     dnnl::memory::dims kernel_dims = {KH, KW}; // modified
@@ -675,7 +654,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto alg_kind = count_include_pad ?
       dnnl::algorithm::pooling_avg_include_padding :
       dnnl::algorithm::pooling_avg_exclude_padding ;
-
+      
     dnnl::memory::dim N = input_shape[0],
       IC = input_shape[1],
       IH = input_shape[2],
@@ -689,15 +668,23 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       SH = std::stoi(str_strides[0]),
       SW = std::stoi(str_strides[1]),
       DH = dilation0,
-      DW = dilation1,
-      OH = (IH - KH + PH_L + PH_R) / SH + 1,
-      OW = (IW - KW + PW_L + PW_R) / SW + 1;
+      DW = dilation1;
     
     if(node.GetAttr<std::vector<std::string>>("layout")[0].size()>4)
       {
         IC = input_shape[1]*input_shape[4];                    // input channels
     }
 
+    if(node.GetAttr<std::vector<std::string>>("layout")[0]=="NHWC")
+      {
+        IC = input_shape[3];
+        IH = input_shape[1];
+        IW = input_shape[2];
+    }
+
+
+    dnnl::memory::dim OH = (IH - KH + PH_L + PH_R) / SH + 1,
+                      OW = (IW - KW + PW_L + PW_R) / SW + 1;
 
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
