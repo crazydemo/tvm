@@ -36,7 +36,9 @@ network_dict = {"resnet18":"ResNet18_v1b",
                 "vgg16_bn":"VGG16_bn",
                 "vgg19_bn":"VGG19_bn",
                 "densenet121":"DenseNet121",
-                "InceptionV3":"InceptionV3",}
+                "InceptionV3":"InceptionV3",
+                "MobileNet1.0":"MobileNet1.0",
+                "i3d_resnet50_v1_kinetics400":"i3d_resnet50_v1_kinetics400"}
 
 data_dic = {"a":"N",
             "b":"C",
@@ -46,13 +48,8 @@ data_dic = {"a":"N",
 weight_dic = {"a":"O",
               "b":"I",
               "c":"H",
-              "d":"W",}
-
-translate_dict = {"abcd":"NCHW",
-                "Acdb8a": "OHWI8o",
-                "Acdb16a": "OHWI16o",
-                "ABcd8b8a": "OIHW8i8o",
-                "ABcd16b16a": "OIHW16i16o",}
+              "d":"W",
+              "e":"G"}
 
 @tvm.instrument.pass_instrument
 class PrintIR:
@@ -61,194 +58,6 @@ class PrintIR:
     def run_before_pass(self, mod, info):
         print("Running pass: {}", info)
         print(mod)
-
-@relay.transform.function_pass(opt_level=1)
-class CustomPipeline:
-    """Simple test function to replace one argument to another."""
-
-    def __init__(self):
-        self.cnt = 0
-        self.net_dict = {}
-        self.branch_post_op_dict = {} # dict for querying the post ops of the key node
-        self.branchid = {}
-        self.merge_dict = {}
-        self.net_lst = []
-        self.flag_for_merge_add = False
-
-    # This function can define a pass.
-    def transform_function(self, func, mod, ctx):
-        self.merge_consecutive_add(func.body)
-        if not self.flag_for_merge_add:
-            print("no consecutive add")
-            return func
-        res = self.rewrite_graph()
-        res = relay.Function([self.input], res)
-        return res
-
-    def merge_consecutive_add(self, node):
-        op_set, traversal_lst, tmp_op_lst = set(), [], []
-        cnt_branch = 0
-        traversal_lst.append(node)
-        while traversal_lst:
-            u = traversal_lst.pop()
-            if u not in op_set and not self.check_constant(u):
-                tmp_op_lst.append(self.cnt)
-                self.net_dict[self.cnt] = u
-                if self.check_Var(u):
-                    self.input = u
-                    self.net_lst = [tmp_op_lst]
-                    tmp_op_lst = []
-                    self.cnt += 1
-                    continue
-            else:
-                if u in op_set:
-                    cnt_branch += 1
-                    pre_op_idx = [key for key, value in self.net_dict.items() if value == u][0]
-                    self.branch_post_op_dict[pre_op_idx] = [pre_op_idx-1]
-                    self.net_lst.append(tmp_op_lst)
-                    if len(tmp_op_lst)!=0:
-                        self.branch_post_op_dict[pre_op_idx].append(tmp_op_lst[-1])
-                        self.branchid[tmp_op_lst[-1]] = cnt_branch
-                        tmp_op_lst = []
-                continue
-            op_set.add(u)
-
-            if self.check_consecutive_add(u):
-                a1 = u
-                a2 = a1.args[0]
-                conv = a2.args[0]
-                data = relay.add(a1.args[1], a2.args[1])
-                traversal_lst.extend([data, conv])
-                self.flag_for_merge_add = True
-            else:
-                if 'Tuple' not in str(type(u)):
-                    traversal_lst.extend(list(u.args)[::-1])
-                else:
-                    for i in range(len(u)-1, -1, -1):
-                        traversal_lst.append(u[i])
-            if self.check_branch(u):
-                if 'Tuple' not in str(type(u)):
-                    self.merge_dict[self.cnt] = list(u.args)
-                else:
-                    concat_lst = []
-                    for i in range(len(u)):
-                        concat_lst.append(u[i])
-                    self.merge_dict[self.cnt] = concat_lst
-            self.cnt += 1
-        
-        ivd = dict((v, k) for k, v in self.net_dict.items())
-        for key, value in self.merge_dict.items():
-            tmp_lst = []
-            for v in value:
-                tmp_lst.append(ivd[v])
-            self.merge_dict[key] = tmp_lst
-
-    def rewrite_graph(self):
-        main_idx = self.net_lst[0][-2]
-        while main_idx>=0:
-            if main_idx not in self.merge_dict.keys() and main_idx not in self.branch_post_op_dict.keys():
-                pre_node = self.net_dict[main_idx+1]
-                new_node = self.net_dict[main_idx]
-                new_node = self.get_op(new_node, pre_node)
-                self.net_dict[main_idx] = new_node
-
-            elif main_idx in self.branch_post_op_dict.keys():
-                pre_node = self.net_dict[main_idx+1]
-                new_node = self.net_dict[main_idx]
-                new_node = self.get_op(new_node, pre_node)
-                self.net_dict[main_idx] = new_node
-
-                pre_node = new_node
-                bid_lst = self.branch_post_op_dict[main_idx]
-                for i in range(1, len(bid_lst)):
-                    bid = bid_lst[i] # find the first op idx of the ith branch
-                    branch_op_lst = self.net_lst[self.branchid[bid]] # switch to the branch op lst
-                    for j in range(len(branch_op_lst)-1, -1, -1):
-                        new_node = self.net_dict[branch_op_lst[j]]
-                        new_node = self.get_op(new_node, pre_node)
-                        self.net_dict[branch_op_lst[j]] = new_node
-                        pre_node = new_node
-
-            elif main_idx in self.merge_dict.keys():
-                arg_lst = []
-                for a in self.merge_dict[main_idx]:
-                    arg_lst.append(self.net_dict[a])
-                new_node = self.net_dict[main_idx]
-                new_node = self.get_op(new_node, arg_lst=arg_lst)
-                self.net_dict[main_idx] = new_node
-                
-            main_idx -= 1
-        return new_node
-
-    def check_consecutive_add(self, node):
-        try:
-            return node.op.name=='add' and len(node.type_args[1].shape)==3 and node.args[0].op.name=='add' and len(node.args[0].type_args[1].shape)==3
-        except:
-            return False
-    
-    def check_branch(self, node):
-        try:
-            if 'Tuple' not in str(type(node)):
-                cnt = 0
-                for i in range(len(node.args)):
-                    if 'Call' in str(type(node.args[i])):
-                        cnt += 1
-                return cnt>=2
-            else:
-                return True
-        except:
-            return False
-
-    def check_constant(self, node):
-        try:
-            return 'Constant' in str(type(node))
-        except:
-            return False
-
-    def check_Var(self, node):
-        try:
-            return 'Var' in str(type(node))
-        except:
-            return False
-
-    def get_op(self, node, pre_node=None, arg_lst = None):
-        if 'Tuple' in str(type(node)):
-            return relay.Tuple(arg_lst)
-
-        if arg_lst is not None:
-            args = arg_lst
-        else:
-            args = []
-            for a in node.args:
-                if 'Call' in str(type(a)):
-                    args.append(pre_node)
-                else:
-                    args.append(a)
-
-        if node.op.name=='nn.conv2d':
-            return relay.nn.conv2d(args[0], args[1], **node.attrs)
-        elif node.op.name=='nn.relu':
-            return relay.nn.relu(args[0])
-        elif node.op.name=='multiply':
-            return relay.multiply(args[0], args[1])
-        elif node.op.name=='add':
-            return relay.add(args[0], args[1])
-        elif node.op.name=='concatenate':
-            return relay.concatenate(pre_node, **node.attrs)
-        elif node.op.name=='nn.max_pool2d':
-            return relay.nn.max_pool2d(args[0], **node.attrs)
-        elif node.op.name=='nn.avg_pool2d':
-            return relay.nn.avg_pool2d(args[0], **node.attrs)
-        elif node.op.name=='nn.global_avg_pool2d':
-            return relay.nn.global_avg_pool2d(args[0], **node.attrs)
-        elif node.op.name=='nn.batch_flatten':
-            return relay.nn.batch_flatten(args[0])
-        elif node.op.name=='nn.dense':
-            return relay.nn.dense(args[0], args[1], **node.attrs)
-        elif node.op.name=='nn.dropout':
-            return relay.nn.dropout(args[0], **node.attrs)
-        else:
-            return False
 
 @relay.op.register_alter_op_layout("nn.conv2d", level=114)
 def alter_conv2d(attrs, inputs, tinfos, out_type):
@@ -264,9 +73,6 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
             if "pad" in tensor.op.name:
                 return tensor.type_args[0].concrete_shape
             return (-1, -1, -1, -1)
-    
-    if len(get_shape(data))>4 or len(get_shape(weight))>4 or len(get_shape(out_type))>4:
-        return relay.nn.conv2d(data, weight, **attrs)
 
     N, IC, IH, IW = get_shape(data)
     OC, IC, KH, KW = get_shape(weight)
@@ -274,9 +80,17 @@ def alter_conv2d(attrs, inputs, tinfos, out_type):
     PH_L, PW_L, PH_R, PW_R = attrs.get_int_tuple("padding")
     SH, SW = attrs.get_int_tuple("strides")
     dilation = attrs.get_int_tuple("dilation")
-
-    res = relay.query_layout.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)
+    G = int(attrs.groups)
     new_attrs = dict(attrs)
+
+    if G>1: # for mobilenet
+        IC = IC * G
+        new_attrs['data_layout'] = "NCHW"
+        new_attrs['kernel_layout'] = "OIHW"
+        new_attrs['out_layout'] = "NCHW"
+        return relay.nn.conv2d(data, weight, **new_attrs)
+
+    res = relay.query_layout.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW,G)
 
     src_df, weight_df, dst_df = res.split(',')
 
@@ -312,6 +126,8 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     input_shape = (batch_size, 3, 224, 224)
     if network=="InceptionV3":
         input_shape = (batch_size, 3, 300, 300)
+    if network=="i3d_resnet50_v1_kinetics400":
+        input_shape = (batch_size, 3, 20, 224, 224)
     
     block = gluoncv.model_zoo.get_model(network_dict[network], pretrained=True)
     mod, params = relay.frontend.from_mxnet(
@@ -328,7 +144,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
             relay.transform.FoldScaleAxis(),
             # tvm.transform.PrintIR(),
 
-            CustomPipeline(),
+            relay.transform.SimplifyExpr(),
             relay.transform.FoldConstant(),
             # tvm.transform.PrintIR(),
             
@@ -359,6 +175,8 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         sample = transform_image(image)
         if batch_size>1:
             sample = np.random.rand(input_shape[0], input_shape[1],input_shape[2], input_shape[3])
+        if network=="i3d_resnet50_v1_kinetics400":
+            sample = np.random.rand(input_shape[0], input_shape[1],input_shape[2], input_shape[3], input_shape[4])
 
         import tvm.contrib.graph_executor as graph_executor
         rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
@@ -409,6 +227,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
         
 if __name__ == "__main__":
+    # os.environ["TVM_LOG_DEBUG"]="DEFAULT=1;ir/transform.cc=1;relay/ir/transform.cc=1"
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--network",
@@ -416,7 +235,7 @@ if __name__ == "__main__":
         choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
                 "vgg11", "vgg13", "vgg16", "vgg19", 
                 "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
-                "densenet121", "InceptionV3", "all"],
+                "densenet121", "InceptionV3", "MobileNet1.0", "i3d_resnet50_v1_kinetics400", "all"],
         default="all",
         help="The name of the neural network.",
     )
@@ -424,23 +243,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--target",
         type=str,
-        default="llvm",
+        default="llvm -mcpu=cascadelake -model=platinum-8280",
         help="The compilation target.",
     )
     parser.add_argument("--dtype", type=str, default="float32", help="The data type.")
     
-    parser.add_argument("--warmup", type=int, default=2)
-    parser.add_argument("--batches", type=int, default=10)
+    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--batches", type=int, default=100)
     parser.add_argument("--profiling", type=bool, default=False)
-    parser.add_argument("--check_acc", type=bool, default=True)
+    parser.add_argument("--check_acc", type=bool, default=False)
     args = parser.parse_args()
 
     if args.network == "all":
-        networks = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
+        networks = [
+                    "resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
                     "vgg11", "vgg13", "vgg16", "vgg19", 
                     "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn",
                     "densenet121", 
-                    "InceptionV3"]
+                    "InceptionV3",
+                    ]
     else:
         networks = [args.network]
 

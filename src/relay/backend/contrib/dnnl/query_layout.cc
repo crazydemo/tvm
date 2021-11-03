@@ -1,3 +1,27 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/*!
+ * \file src/relay/backend/contrib/dnnl/query_layout.cc
+ * \brief layout auto-query func.
+ */
+
 #include <tvm/relay/attrs/nn.h>
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/transform.h>
@@ -46,7 +70,7 @@ void compute_blocks(dims_t &blocks, const dnnl::memory::desc *md) {
             blocks[bd.inner_idxs[iblk]] *= bd.inner_blks[iblk];
     }
 
-bool has_runtime_strides(const dnnl::memory::desc *md) {
+inline bool has_runtime_strides(const dnnl::memory::desc *md) {
         using format_kind_t = dnnl_format_kind_t;
         const format_kind_t blocked = dnnl_blocked;
         if (!(md->data.format_kind==blocked)) return false;
@@ -56,7 +80,7 @@ bool has_runtime_strides(const dnnl::memory::desc *md) {
     }
 
 template <typename T>
-void swap(T &t1, T &t2) {
+inline void swap(T &t1, T &t2) {
     T tmp(t1);
     t1 = t2;
     t2 = tmp;
@@ -129,7 +153,7 @@ std::string md2fmt_tag_str(const dnnl::memory::desc *md) {
     return s;
 }
 
-std::string AutoQuery(int N,int IC,int KH,int KW,int OC,int SH,int SW,int PH_L,int PH_R,int PW_L,int PW_R,int OH,int OW) {//int *shapes, struct StructFormat* res
+std::string AutoQuery(int N,int IC,int KH,int KW,int OC,int SH,int SW,int PH_L,int PH_R,int PW_L,int PW_R,int OH,int OW, int G) {//int *shapes, struct StructFormat* res
     dnnl::engine eng(dnnl::engine::kind::cpu, 0);
     dnnl::stream s(eng);
     using tag = dnnl::memory::format_tag;
@@ -140,31 +164,34 @@ std::string AutoQuery(int N,int IC,int KH,int KW,int OC,int SH,int SW,int PH_L,i
 
     const dnnl::memory::dim batch = N;
 
-    dnnl::memory::dims conv1_src_tz = {batch, IC, IH, IW};//{batch, 3, 227, 227};
-    dnnl::memory::dims conv1_weights_tz = {OC, IC, KH, KW};//{96, 3, 11, 11};
-    dnnl::memory::dims conv1_bias_tz = {OC};//{96};
-    dnnl::memory::dims conv1_dst_tz = {batch, OC, OH, OW};//{batch, 96, 55, 55};
-    dnnl::memory::dims conv1_strides = {SH, SW};
-    dnnl::memory::dims conv1_padding_l = {PH_L, PW_L};
-    dnnl::memory::dims conv1_padding_r = {PH_R, PW_R};
+    dnnl::memory::dims conv_src_tz = {batch, IC, IH, IW};//{batch, 3, 227, 227};
+    dnnl::memory::dims conv_weights_tz = {OC, IC, KH, KW};//{96, 3, 11, 11};
+    if (G > 1) {
+      conv_weights_tz = {G, 1, IC / G, KH, KW};
+    }
+    dnnl::memory::dims conv_bias_tz = {OC};//{96};
+    dnnl::memory::dims conv_dst_tz = {batch, OC, OH, OW};//{batch, 96, 55, 55};
+    dnnl::memory::dims conv_strides = {SH, SW};
+    dnnl::memory::dims conv_padding_l = {PH_L, PW_L};
+    dnnl::memory::dims conv_padding_r = {PH_R, PW_R};
 
-    auto conv1_src_md = dnnl::memory::desc({conv1_src_tz}, dt::f32, tag::any);
-    auto conv1_bias_md = dnnl::memory::desc({conv1_bias_tz}, dt::f32, tag::any);
-    auto conv1_weights_md = dnnl::memory::desc({conv1_weights_tz}, dt::f32, tag::any);
-    auto conv1_dst_md = dnnl::memory::desc({conv1_dst_tz}, dt::f32, tag::any);
+    auto conv_src_md = dnnl::memory::desc({conv_src_tz}, dt::f32, tag::any);
+    auto conv_bias_md = dnnl::memory::desc({conv_bias_tz}, dt::f32, tag::any);
+    auto conv_weights_md = dnnl::memory::desc({conv_weights_tz}, dt::f32, tag::any);
+    auto conv_dst_md = dnnl::memory::desc({conv_dst_tz}, dt::f32, tag::any);
     //[Create convolution memory descriptors]
 
-    auto conv1_desc = dnnl::convolution_forward::desc(dnnl::prop_kind::forward_inference,
-            dnnl::algorithm::convolution_direct, conv1_src_md, conv1_weights_md,
-            conv1_bias_md, conv1_dst_md, conv1_strides, conv1_padding_l,
-            conv1_padding_r);
+    auto conv_desc = dnnl::convolution_forward::desc(dnnl::prop_kind::forward_inference,
+            dnnl::algorithm::convolution_direct, conv_src_md, conv_weights_md,
+            conv_bias_md, conv_dst_md, conv_strides, conv_padding_l,
+            conv_padding_r);
 
-    auto conv1_prim_desc = dnnl::convolution_forward::primitive_desc(conv1_desc, eng);
+    auto conv_prim_desc = dnnl::convolution_forward::primitive_desc(conv_desc, eng);
 
-    auto src_format = conv1_prim_desc.src_desc();//.data;
-    auto weights_format = conv1_prim_desc.weights_desc();//.data;
-    // auto bias_format = conv1_prim_desc.bias_desc();
-    auto dst_format = conv1_prim_desc.dst_desc();//.data;
+    auto src_format = conv_prim_desc.src_desc();//.data;
+    auto weights_format = conv_prim_desc.weights_desc();//.data;
+    // auto bias_format = conv_prim_desc.bias_desc();
+    auto dst_format = conv_prim_desc.dst_desc();//.data;
     std::string src_df, weight_df, dst_df;
 
     src_df = md2fmt_tag_str(&src_format);
@@ -175,7 +202,7 @@ std::string AutoQuery(int N,int IC,int KH,int KW,int OC,int SH,int SW,int PH_L,i
 }
 
 TVM_REGISTER_GLOBAL("relay.ir.AutoQuery").set_body([](TVMArgs args, TVMRetValue* rv) {
-  *rv = AutoQuery(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12]);
+  *rv = AutoQuery(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13]);
 });
 
 }  // namespace contrib

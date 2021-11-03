@@ -511,6 +511,34 @@ def test_concretize_multiple():
     actual = run_opt_pass(ret, relay.transform.SimplifyExpr())
     assert tvm.ir.structural_equal(actual, expected)
 
+def test_simplify_consecuitive_add():
+    shape = (32, 1, 1)
+    c_data = np.empty(shape).astype("float32")
+    c1 = relay.const(c_data)
+    c2 = relay.const(c_data)
+
+    def before():
+        x = relay.var("x", shape=(1, 16, 16, 16), dtype="float32")
+        w = relay.var("w", shape=(32, 16, 3, 3), dtype="float32")
+        y = relay.nn.conv2d(x, w, padding=(1, 1))
+        y = relay.add(y, c1)
+        y = relay.add(y, c2)
+        y = relay.nn.relu(y)
+        return relay.Function([x, w], y)
+
+    def expected():
+        x = relay.var("x", shape=(1, 16, 16, 16), dtype="float32")
+        w = relay.var("w", shape=(32, 16, 3, 3), dtype="float32")
+        y = relay.nn.conv2d(x, w, padding=(1, 1))
+        c3 = relay.add(c1, c2)
+        y = relay.add(y, c3)
+        y = relay.nn.relu(y)
+        return relay.Function([x, w], y)
+
+    z = before()
+    zz = run_opt_pass(z, transform.SimplifyExpr())
+    after = run_opt_pass(expected(), transform.InferType())
+    assert tvm.ir.structural_equal(zz, after)
 
 if __name__ == "__main__":
     pytest.main([__file__])
