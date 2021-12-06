@@ -585,6 +585,35 @@ class EliminateIdentityRewrite : public DFPatternRewrite {
   DFPattern const_;
 };
 
+/*! \brief Make two consecuitive add able to be constant_folded. */
+class SimplifyConsecuitiveAdd : public DFPatternRewrite {
+ public:
+  SimplifyConsecuitiveAdd() {
+    x_ = IsWildcard();
+    const1_ = IsConstant();
+    const2_ = IsConstant();
+    DFPattern add_op_ = IsOp("add");
+    pattern_ = add_op_({add_op_({x_, const1_}), const2_});
+  }
+
+  Expr Callback(const Expr& pre, const Expr& post,
+                const Map<DFPattern, Array<Expr>>& node_map) const override {
+    const CallNode* call = pre.as<CallNode>();
+    auto x = node_map[x_][0];
+    auto c1 = node_map[const1_][0];
+    auto c2 = node_map[const2_][0];
+    auto add_op = call->op;
+    auto add_res = Call(add_op, {c1, c2});
+    auto res = Call(add_op, {x, add_res});
+    return res;
+  }
+
+ private:
+  DFPattern x_;
+  DFPattern const1_;
+  DFPattern const2_;
+};
+
 Expr SimplifyExpr(const Expr& expr, const IRModule& mod) {
   // the rewrites will be applied in the given order, and repeated until fixed point
   DFPatternRewriteComposer composer;
@@ -599,6 +628,7 @@ Expr SimplifyExpr(const Expr& expr, const IRModule& mod) {
   composer.AddRewrite<SimplifyTranspose>();
   composer.AddRewrite<SimplifyCast>();
   composer.AddRewrite<FullElementwise>();
+  composer.AddRewrite<SimplifyConsecuitiveAdd>();
   return RewritePatterns(composer.MakeCallbacks(), expr, mod);
 }
 
