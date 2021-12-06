@@ -26,6 +26,7 @@
 #include <tvm/runtime/registry.h>
 
 #include <cstddef>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,22 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   using dt = dnnl::memory::data_type;
 
  public:
+  std::map<std::string, tag> layout_dict{
+      {"NCHW", tag::abcd},
+      {"OIHW", tag::abcd},
+      {"NCHW16c", tag::aBcd16b},
+      {"NCHW8c", tag::aBcd8b},
+      {"OIHW16i16o", tag::ABcd16b16a},
+      {"OIHW8i8o", tag::ABcd8b8a},
+
+      {"NHWC", tag::acdb},
+      {"OHWI64o", tag::Acdb64a},
+      {"OHWI48o", tag::Acdb48a},
+      {"OHWI32o", tag::Acdb32a},
+      {"OHWI16o", tag::Acdb16a},
+      {"OHWI8o", tag::Acdb8a},
+  };
+
   DNNLJSONRuntime(const std::string& symbol_name, const std::string& graph_json,
                   const Array<String> const_names)
       : JSONRuntimeBase(symbol_name, graph_json, const_names) {}
@@ -68,12 +85,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       // TODO(@comaniac): Support other data lengths.
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      if (offset_in_bytes == 0) {
-        entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
-      } else {
-        write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-                             offset_in_bytes);
-      }
+      write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+                           offset_in_bytes);
     }
 
     // Invoke the engine through intepreting the stream.
@@ -87,12 +100,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       auto eid = EntryID(outputs_[i]);
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      if (offset_in_bytes == 0) {
-        entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
-      } else {
-        read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-                              offset_in_bytes);
-      }
+      read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+                            offset_in_bytes);
     }
   }
 
@@ -189,26 +198,58 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::vector<std::string> str_dilates = node.GetAttr<std::vector<std::string>>("dilation");
     std::vector<std::string> str_padding = node.GetAttr<std::vector<std::string>>("padding");
     dnnl::memory::dim groups = std::stoi(node.GetAttr<std::vector<std::string>>("groups")[0]);
+    tag src_df = layout_dict[node.GetAttr<std::vector<std::string>>("data_layout")[0]];
+    tag weight_df = (groups > 1)
+                        ? tag::goihw
+                        : layout_dict[node.GetAttr<std::vector<std::string>>("kernel_layout")[0]];
+    dnnl::memory::dim outC = std::stoi(node.GetAttr<std::vector<std::string>>("channels")[0]);
 
-    dnnl::memory::dim N = input_shape[0],        // batch size
-        IC = input_shape[1],                     // input channels
-        IH = input_shape[2],                     // input height
-        IW = input_shape[3],                     // input width
-        OC = weight_shape[0],                    // output channels
-        KH = weight_shape[2],                    // weight height
-        KW = weight_shape[3],                    // weight width
-        PW_L = std::stoi(str_padding[1]),        // width padding: left
-        PW_R = std::stoi(str_padding[3]),        // width padding: right
-        PH_L = std::stoi(str_padding[0]),        // height padding: top
-        PH_R = std::stoi(str_padding[2]),        // height padding: bottom
-        SH = std::stoi(str_strides[0]),          // height-wise stride
-        SW = std::stoi(str_strides[1]),          // weight-wise stride
-        DH = std::stoi(str_dilates[0]) - 1,      // height-wise dilate
-        DW = std::stoi(str_dilates[1]) - 1,      // weight-wise dilate
-        DKH = 1 + (KH - 1) * (DH + 1),           // dilated weight height
-        DKW = 1 + (KW - 1) * (DW + 1),           // dilated weight width
-        OH = (IH - DKH + PH_L + PH_R) / SH + 1,  // output height
-        OW = (IW - DKW + PW_L + PW_R) / SW + 1;  // output width
+    // Default data layout: NCHW.
+    // Default kernel layout: OIHW.
+    dnnl::memory::dim N = input_shape[0],    // batch size
+        IC = input_shape[1],                 // input channels
+        IH = input_shape[2],                 // input height
+        IW = input_shape[3],                 // input width
+        OC = outC,                           // output channels
+        KH = weight_shape[2],                // weight height
+        KW = weight_shape[3],                // weight width
+        PW_L = std::stoi(str_padding[1]),    // width padding: left
+        PW_R = std::stoi(str_padding[3]),    // width padding: right
+        PH_L = std::stoi(str_padding[0]),    // height padding: top
+        PH_R = std::stoi(str_padding[2]),    // height padding: bottom
+        SH = std::stoi(str_strides[0]),      // height-wise stride
+        SW = std::stoi(str_strides[1]),      // weight-wise stride
+        DH = std::stoi(str_dilates[0]) - 1,  // height-wise dilate
+        DW = std::stoi(str_dilates[1]) - 1,  // weight-wise dilate
+        DKH = 1 + (KH - 1) * (DH + 1),       // dilated weight height
+        DKW = 1 + (KW - 1) * (DW + 1);       // dilated weight width
+
+    // Recompute data dims according to the assigned layout.
+    std::regex dl_reg("NCHW\\d{2}c");
+    if (std::regex_match(node.GetAttr<std::vector<std::string>>("data_layout")[0], dl_reg)) {
+      IC = IC * input_shape[4];
+    } else if (node.GetAttr<std::vector<std::string>>("data_layout")[0] == "NHWC") {
+      IC = input_shape[3], IH = input_shape[1], IW = input_shape[2];
+    } else if (node.GetAttr<std::vector<std::string>>("data_layout")[0] != "NCHW") {
+      LOG(FATAL) << "Unsupported data layout for dnnl.conv2d: "
+                 << node.GetAttr<std::vector<std::string>>("data_layout")[0];
+    }
+
+    // Recompute weight dims according to the assigned layout.
+    std::regex kl_reg_2x("OHWI\\d{2}o");
+    std::regex kl_reg_1x("OIHW\\d{2}i\\d{2}o");
+    if (std::regex_match(node.GetAttr<std::vector<std::string>>("kernel_layout")[0], kl_reg_2x)) {
+      KH = weight_shape[1], KW = weight_shape[2];
+    } else if (!std::regex_match(node.GetAttr<std::vector<std::string>>("kernel_layout")[0],
+                                 kl_reg_1x) &&
+               node.GetAttr<std::vector<std::string>>("kernel_layout")[0] != "OIHW") {
+      LOG(FATAL) << "Unsupported kernel layout for dnnl.conv2d: "
+                 << node.GetAttr<std::vector<std::string>>("kernel_layout")[0];
+    }
+
+    // Compute the output dims
+    dnnl::memory::dim OH = (IH - DKH + PH_L + PH_R) / SH + 1,  // output height
+        OW = (IW - DKW + PW_L + PW_R) / SW + 1;                // output width
 
     // Memory shapes.
     dnnl::memory::dims src_dims = {N, IC, IH, IW};
@@ -224,10 +265,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dims padding_dims_r = {PH_R, PW_R};
 
     // Memory descriptions.
-    auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, tag::any);
-    auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, tag::any);
-    auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
-    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::nchw);
+    auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, src_df);
+    auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, weight_df);
+    auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::x);
+    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::any);
 
     // Covn2d description.
     auto conv_desc = dnnl::convolution_forward::desc(
@@ -250,16 +291,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_.push_back(conv);
 
     // Data memory.
-    ICHECK_EQ(node.GetAttr<std::vector<std::string>>("data_layout")[0], "NCHW");
-    auto conv2d_src_memory = BindDNNLMemory(data_entry, {src_dims, dt::f32, tag::nchw});
+    auto conv2d_src_memory = BindDNNLMemory(data_entry, conv_src_md);
 
     // Weight memory.
-    ICHECK_EQ(node.GetAttr<std::vector<std::string>>("kernel_layout")[0], "OIHW");
-    auto conv2d_weights_memory = BindDNNLMemory(
-        weight_entry, {weights_dims, dt::f32, (groups > 1) ? tag::goihw : tag::oihw});
+    auto conv2d_weights_memory = BindDNNLMemory(weight_entry, conv_weights_md);
 
     // Bias memory.
-    auto conv2d_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
+    auto conv2d_bias_memory = dnnl::memory(conv_bias_md, engine_);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
       BindDNNLMemory(bias_entry, conv2d_bias_memory);

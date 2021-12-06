@@ -47,8 +47,6 @@ def assert_result_dict_holds(result_dict):
     for k1, k2 in itertools.combinations(result_dict, 2):
         res1 = vmobj_to_list(result_dict[k1])
         res2 = vmobj_to_list(result_dict[k2])
-        print(k1, res1[0][0][0])
-        print(k2, res2[0][0][0])
         for r1, r2 in zip(res1, res2):
             tvm.testing.assert_allclose(r1, r2, rtol=1e-3, atol=1e-3)
 
@@ -63,12 +61,17 @@ def run_and_verify(mod, input, params, target, run_module):
     dev = tvm.cpu()
     result_dict = dict()
     for mode in ["graph", "vm"]:
-        for use_dnnl in [False, True]:
+        for use_dnnl, alter_layout in [(False, False), (True, False), (True, True)]:
             result_key = mode + ("_dnnl" if use_dnnl else "")
             if use_dnnl:
-                mod = dnnl.partition_for_dnnl(mod, params)
+                processed_mod = dnnl.partition_for_dnnl(mod, params, alter_layout)
+                check_dnnl_used(processed_mod)
+            else:
+                processed_mod = mod
             with tvm.transform.PassContext(opt_level=3):
-                func = relay.create_executor(mode, mod=mod, device=dev, target=target).evaluate()
+                func = relay.create_executor(
+                    mode, mod=processed_mod, device=dev, target=target
+                ).evaluate()
             if run_module:
                 if isinstance(input, dict):
                     result_dict[result_key] = func(**input, **params)
@@ -98,7 +101,7 @@ def run_and_verify_func(config, run_module, target="llvm", dtype="float32"):
         for k, v in input_shapes.items()
         if k not in is_param
     }
-    run_and_verify(f, input_dict, params, target, run_module)
+    run_and_verify(f, input_dict, params, target=target, run_module=run_module)
 
 
 def get_conv2d(
@@ -165,7 +168,7 @@ def get_conv2d_weights_const(
 def get_conv2d_bias(
     x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), activation=None, dtype="float32"
 ):
-    conv, dic, param_lst = get_conv2d(x_shape=x_shape, k_shape=k_shape, dtype=dtype)
+    conv, dic, param_lst = get_conv2d_weights_const(x_shape=x_shape, k_shape=k_shape, dtype=dtype)
     bias = relay.var("bias", shape=(k_shape[0],), dtype=dtype)
     out = relay.nn.bias_add(conv, bias)
     dic["bias"] = (k_shape[0],)

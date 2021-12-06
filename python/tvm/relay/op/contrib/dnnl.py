@@ -35,13 +35,13 @@ check the attributes of the op and decide if it should be offloaded to DNNL.
 import logging
 
 import tvm.ir
+from tvm import relay
 from tvm.relay import transform
 from tvm.relay.build_module import bind_params_by_name
 
+from ... import _ffi_api
 from ...dataflow_pattern import wildcard, is_op
 from .register import register_pattern_table
-from tvm.relay import transform
-from tvm.relay.build_module import bind_params_by_name
 
 logger = logging.getLogger("DNNL")
 
@@ -181,7 +181,82 @@ def pattern_table():
     return dnnl_patterns
 
 
-def partition_for_dnnl(mod, params=None):
+def get_optimal_layout_for_conv2d(N, IC, KH, KW, OC, SH, SW, DH, DW, PH_L, PH_R, PW_L, PW_R, OH, OW, G):
+    """Get the optimal layout of dnnl, given shape of conv2d.
+
+    Parameters
+    ----------
+    N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW,G : Int
+                                                     Input argument.
+
+    Returns
+    -------
+    layouts : string
+              The result.
+    """
+    return _ffi_api.get_optimal_layout_for_conv2d(
+        N, IC, KH, KW, OC, SH, SW, DH, DW, PH_L, PH_R, PW_L, PW_R, OH, OW, G
+    )
+
+
+def alter_conv2d(attrs, inputs, tinfos, out_type):
+    """The conv2d's layout auto-query func for dnnl."""
+
+    def get_shape(tensor):
+        if isinstance(tensor, relay.expr.Var):
+            return tensor.type_annotation.concrete_shape
+        elif isinstance(tensor, relay.expr.Constant):
+            return tensor.data.shape
+        elif isinstance(tensor, tvm.ir.tensor_type.TensorType):
+            return tensor.concrete_shape
+        else:
+            raise TypeError("Unsupport data type: %s" % type(tensor))
+
+    def trans_data(input_data, is_weight=False):
+        data_dic = {"a": "N", "b": "C", "c": "H", "d": "W"}
+        weight_dic = {"a": "O", "b": "I", "c": "H", "d": "W", "e": "G"}
+        dic = weight_dic if is_weight else data_dic
+        res = ""
+
+        for i in input_data:
+            if i.isupper():
+                i = i.lower()
+                res += dic[i]
+                dic[i] = dic[i].lower()
+            elif i.islower():
+                res += dic[i]
+            elif i.isdigit():
+                res += i
+            else:
+                raise ValueError("Unsupport layout format: %s" % input_data)
+        return res
+
+    data, weight = inputs
+    OC, IC, KH, KW = get_shape(weight)
+    N, OC, OH, OW = get_shape(out_type)
+    PH_L, PW_L, PH_R, PW_R = attrs.get_int_tuple("padding")
+    SH, SW = attrs.get_int_tuple("strides")
+    DH, DW = attrs.get_int_tuple("dilation")
+    G = int(attrs.groups)
+    new_attrs = dict(attrs)
+
+    # To do optimal layout transform for group conv2d.
+    # Set group conv2d as plain format currently.
+    if G > 1:
+        return relay.nn.conv2d(data, weight, **attrs)
+
+    res = get_optimal_layout_for_conv2d(
+        N, IC, KH, KW, OC, SH, SW, DH, DW, PH_L, PH_R, PW_L, PW_R, OH, OW, G
+    )
+    src_df, weight_df, dst_df = res.split(",")
+    new_attrs["data_layout"] = trans_data(src_df, is_weight=False)
+    new_attrs["kernel_layout"] = trans_data(weight_df, is_weight=True)
+    new_attrs["out_layout"] = trans_data(dst_df, is_weight=False)
+
+    return relay.nn.conv2d(data, weight, **new_attrs)
+
+
+def partition_for_dnnl(mod, params=None, alter_layout=True):
     """Partition the graph greedily offloading supported operators to DNNL.
 
     Parameters
@@ -190,12 +265,13 @@ def partition_for_dnnl(mod, params=None):
         The module to run passes on.
     params : Optional[Dict[str, NDArray]]
         Constant input parameters.
+    alter_layout : bool
+        Whether alter conv2d's layout to the optimal one of dnnl.
     Returns
     -------
     mod : Module
         Annotated and partitioned module.
     """
-
     if params:
         mod["main"] = bind_params_by_name(mod["main"], params)
     seq = tvm.transform.Sequential(
@@ -208,6 +284,25 @@ def partition_for_dnnl(mod, params=None):
             # fold consecutive add ops to simplify pattern `conv2d-bias_add-bn-relu`
             transform.SimplifyExpr(),
             transform.FoldConstant(),
+        ]
+    )
+    with tvm.transform.PassContext(opt_level=3):
+        mod = seq(mod)
+    if alter_layout:
+        from tvm.relay.testing.temp_op_attr import TempOpAttr
+
+        with TempOpAttr("nn.conv2d", "FTVMAlterOpLayout", alter_conv2d):
+            alter_layout_seq = tvm.transform.Sequential(
+                [
+                    transform.AlterOpLayout(),
+                    transform.FoldConstant(),
+                ]
+            )
+            with tvm.transform.PassContext(opt_level=3):
+                mod = alter_layout_seq(mod)
+
+    byoc_seq = tvm.transform.Sequential(
+        [
             transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
@@ -215,5 +310,5 @@ def partition_for_dnnl(mod, params=None):
         ]
     )
     with tvm.transform.PassContext(opt_level=3):
-        mod = seq(mod)
+        mod = byoc_seq(mod)
     return mod
