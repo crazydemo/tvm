@@ -18,6 +18,7 @@ from gluoncv.model_zoo import get_model
 import numpy as np
 import pytest
 import itertools
+
 import tvm
 import tvm.relay.testing
 from tvm import relay
@@ -117,7 +118,7 @@ def run_and_verify_model(
 
 def get_conv1d(
     x_shape=((1, 3, 224)),
-    k_shape=(10, 3, 3),
+    k_shape=(16, 3, 3),
     groups=1,
     padding=(1, 1),
     strides=(1),
@@ -518,15 +519,22 @@ def test_unary(run_module):
 
 
 def test_conv1d(run_module, dtype="float32"):
-    conv1d, dic, param_lst = get_conv1d(channels=10, dtype=dtype)
+    conv1d, dic, param_lst = get_conv1d(channels=16, dtype=dtype)
     conv1d = tvm.IRModule.from_expr(conv1d)
     config = conv1d, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+    x_shape = (1, 32, 224)
+    k_shape = (16, 32, 3)
+    conv1d_bias, dic, param_lst = get_conv1d(x_shape, k_shape, dtype=dtype)
+    conv1d_bias = tvm.IRModule.from_expr(conv1d_bias)
+    config = conv1d_bias, dic, param_lst
     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
 def test_conv1d_pattern(run_module, dtype="float32"):
     x_shape = (1, 3, 224)
-    k_shape = (10, 3, 3)
+    k_shape = (16, 3, 3)
     activation_lst = [None, "relu", "tanh", "sigmoid"]
     for a in activation_lst:
         conv1d, dic, param_lst = get_conv1d(x_shape, k_shape, activation=a, dtype=dtype)
@@ -563,6 +571,13 @@ def test_conv2d(run_module, dtype="float32"):
 def test_conv2d_weights_const(run_module, dtype="float32"):
     x_shape = (1, 32, 8, 8)
     k_shape = (16, 32, 3, 3)
+    conv2d, dic, param_lst = get_conv2d_weights_const(x_shape, k_shape, dtype=dtype)
+    conv2d = tvm.IRModule.from_expr(conv2d)
+    config = conv2d, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+    x_shape = (1, 3, 8, 8)
+    k_shape = (16, 3, 3, 3)
     conv2d, dic, param_lst = get_conv2d_weights_const(x_shape, k_shape, dtype=dtype)
     conv2d = tvm.IRModule.from_expr(conv2d)
     config = conv2d, dic, param_lst
@@ -622,6 +637,13 @@ def test_conv3d(run_module, dtype="float32"):
     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
     conv3d, dic, param_lst = get_conv3d(padding=(0, 0, 0, 1, 1, 1), dtype=dtype)
+    conv3d = tvm.IRModule.from_expr(conv3d)
+    config = conv3d, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+    conv3d, dic, param_lst = get_conv3d(
+        x_shape=(1, 3, 8, 8, 8), k_shape=(16, 3, 3, 3, 3), dtype=dtype
+    )
     conv3d = tvm.IRModule.from_expr(conv3d)
     config = conv3d, dic, param_lst
     run_and_verify_func(config, run_module=run_module, dtype=dtype)

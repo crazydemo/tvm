@@ -46,22 +46,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   using dt = dnnl::memory::data_type;
 
  public:
-  std::map<std::string, tag> layout_dict{
-      {"NCHW", tag::abcd},
-      {"OIHW", tag::abcd},
-      {"NCHW16c", tag::aBcd16b},
-      {"NCHW8c", tag::aBcd8b},
-      {"OIHW16i16o", tag::ABcd16b16a},
-      {"OIHW8i8o", tag::ABcd8b8a},
-
-      {"NHWC", tag::acdb},
-      {"OHWI64o", tag::Acdb64a},
-      {"OHWI48o", tag::Acdb48a},
-      {"OHWI32o", tag::Acdb32a},
-      {"OHWI16o", tag::Acdb16a},
-      {"OHWI8o", tag::Acdb8a},
-  };
-
   DNNLJSONRuntime(const std::string& symbol_name, const std::string& graph_json,
                   const Array<String> const_names)
       : JSONRuntimeBase(symbol_name, graph_json, const_names) {}
@@ -108,10 +92,30 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
  private:
   // Build up the engine based on the input graph.
   std::map<std::string, tag> layout_dict{
-      {"NCW", tag::ncw},       {"OIW", tag::oiw},     {"GOIW", tag::goiw},   {"NCHW", tag::nchw},
-      {"OIHW", tag::oihw},     {"GOIHW", tag::goihw}, {"NCDHW", tag::ncdhw}, {"OIDHW", tag::oidhw},
-      {"GOIDHW", tag::goidhw}, {"IOHW", tag::iohw},   {"GIOHW", tag::giohw}, {"IODHW", tag::iodhw},
+      {"NCW", tag::ncw},
+      {"OIW", tag::oiw},
+      {"GOIW", tag::goiw},
+      {"NCHW", tag::nchw},
+      {"OIHW", tag::oihw},
+      {"GOIHW", tag::goihw},
+      {"NCDHW", tag::ncdhw},
+      {"OIDHW", tag::oidhw},
+      {"GOIDHW", tag::goidhw},
+      {"IOHW", tag::iohw},
+      {"GIOHW", tag::giohw},
+      {"IODHW", tag::iodhw},
       {"GIODHW", tag::giodhw},
+
+      // Blocking layout.
+      {"NCW16c", tag::nCw16c},
+      {"OIW16i16o", tag::OIw16i16o},
+      {"OWI16o", tag::Owi16o},
+      {"NCHW16c", tag::nChw16c},
+      {"OIHW16i16o", tag::OIhw16i16o},
+      {"OHWI16o", tag::Ohwi16o},
+      {"NCDHW16c", tag::nCdhw16c},
+      {"OIDHW16i16o", tag::OIdhw16i16o},
+      {"ODHWI16o", tag::Odhwi16o},
   };
 
   bool ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
@@ -136,6 +140,35 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // Parsing bias_add.
     return std::regex_match(op_name, bias_add_pat) ? true : false;
+  }
+
+  dnnl::memory::dims TransDims2Plain(dnnl::memory::dims input_dims, std::string layout) {
+    std::regex dl_plain_reg("NC(D*)(H*)W");
+    std::regex kl_plain_reg("OI(D*)(H*)W");
+    std::regex dl_reg("NC(D*)(H*)W\\d{2}c");
+    std::regex kl_reg("OI(D*)(H*)W\\d{2}i\\d{2}o");
+    std::regex kl_owixo_reg("O(D*)(H*)WI\\d{2}o");
+    dnnl::memory::dims out_dims;
+
+    if (std::regex_match(layout, dl_reg)) {
+      dnnl::memory::dim C = input_dims[1] * input_dims[input_dims.size() - 1];
+      out_dims = {input_dims[0], C};
+      out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 1);
+    } else if (std::regex_match(layout, kl_reg)) {
+      dnnl::memory::dim O = input_dims[0] * input_dims[input_dims.size() - 1],
+                        I = input_dims[1] * input_dims[input_dims.size() - 2];
+      out_dims = {O, I};
+      out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 2);
+    } else if (std::regex_match(layout, kl_owixo_reg)) {
+      dnnl::memory::dim O = input_dims[0] * input_dims[input_dims.size() - 1];
+      out_dims = {O, input_dims[input_dims.size() - 2]};
+      out_dims.insert(out_dims.end(), input_dims.begin() + 1, input_dims.end() - 2);
+    } else if (std::regex_match(layout, dl_plain_reg) || std::regex_match(layout, kl_plain_reg)) {
+      out_dims = input_dims;
+    } else {
+      LOG(FATAL) << "Unsupported layout for TransDims2Plain: " << layout;
+    }
+    return out_dims;
   }
 
   dnnl::memory::dims TransformStr2Dims(std::vector<std::string> strs, std::string str_name) {
@@ -254,25 +287,35 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     }
 
     // Memory shapes.
-    dnnl::memory::dims src_dims = input_shape;       // {N, IC, ID, IH, IW}
-    dnnl::memory::dims weights_dims = weight_shape;  // {OC, IC, KD, KH, KW}
+    dnnl::memory::dims src_dims = TransDims2Plain(input_shape, data_layout);
+    dnnl::memory::dims weights_dims = TransDims2Plain(weight_shape, kernel_layout);
+    dnnl::memory::dims bias_dims = {channels};
+    dnnl::memory::dims strides_dims = TransformStr2Dims(str_strides, "strides");
+    dnnl::memory::dims dilates_dims = TransformStr2Dims(str_dilates, "dilates");
+    dnnl::memory::dims padding_dims_l = TransformStr2Dims(str_padding_l, "padding");
+    dnnl::memory::dims padding_dims_r = TransformStr2Dims(str_padding_r, "padding");
+    dnnl::memory::dims dst_dims = src_dims;
+    dst_dims[1] = channels;
+    for (int i = 2; i < src_dims.size(); i++) {
+      dnnl::memory::dim K = weights_dims[i];
+      dnnl::memory::dim S = strides_dims[i - 2];
+      dnnl::memory::dim D = dilates_dims[i - 2];
+      dnnl::memory::dim PL = padding_dims_l[i - 2];
+      dnnl::memory::dim PR = padding_dims_r[i - 2];
+      dnnl::memory::dim DK = 1 + (K - 1) * (D + 1);
+      dst_dims[i] = (src_dims[i] - DK + PL + PR) / S + 1;
+    }
     if (groups > 1) {
       weights_dims = {groups, 1, input_shape[1] / groups};
       weights_dims.insert(weights_dims.end(), weight_shape.begin() + 2, weight_shape.end());
       kernel_layout.insert(0, "G");
     }
-    dnnl::memory::dims bias_dims = {channels};
-    dnnl::memory::dims dst_dims = out_shape;  // {N, OC, OD, OH, OW}
-    dnnl::memory::dims strides_dims = TransformStr2Dims(str_strides, "strides");
-    dnnl::memory::dims dilates_dims = TransformStr2Dims(str_dilates, "dilates");
-    dnnl::memory::dims padding_dims_l = TransformStr2Dims(str_padding_l, "padding");
-    dnnl::memory::dims padding_dims_r = TransformStr2Dims(str_padding_r, "padding");
 
     // Memory descriptions.
     auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, layout_dict[data_layout]);
     auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, layout_dict[kernel_layout]);
     auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
-    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, layout_dict[data_layout]);
+    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::any);
 
     // Covn2d description.
     auto conv_desc = dnnl::convolution_forward::desc(
@@ -294,7 +337,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv2d_weights_memory = BindDNNLMemory(weight_entry, conv_weights_md);
 
     // Bias memory.
-    auto conv2d_bias_memory = dnnl::memory(conv_bias_md, engine_);
+    auto conv2d_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
       BindDNNLMemory(bias_entry, conv2d_bias_memory);
@@ -544,8 +587,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                                : dnnl::algorithm::pooling_avg_exclude_padding;
     }
 
-    dnnl::memory::dims src_dims = input_shape;
-    dnnl::memory::dims dst_dims = out_shape;
+    dnnl::memory::dims src_dims = TransDims2Plain(input_shape, layout);
+    dnnl::memory::dims dst_dims = TransDims2Plain(out_shape, layout);
     dnnl::memory::dims kernel_dims = TransformStr2Dims(str_kernel, "kernel");
     dnnl::memory::dims strides_dims = TransformStr2Dims(str_strides, "strides");
     dnnl::memory::dims dilates_dims = TransformStr2Dims(str_dilates, "dilates");
