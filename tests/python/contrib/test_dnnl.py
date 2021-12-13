@@ -231,7 +231,9 @@ def test_dnnl_not_compatible(run_module, target="llvm", dtype="float32"):
     mod = dnnl.partition_for_dnnl(mod)
     for mode in ["graph", "vm"]:
         with tvm.transform.PassContext(opt_level=3):
-            func = relay.create_executor(mode, mod=mod, device=tvm.cpu(0), target=target).evaluate()
+            func = relay.create_executor(
+                mode, mod=mod, device=tvm.cpu(0), target="llvm"
+            ).evaluate()
             if run_module:
                 results = func(x_data)
 
