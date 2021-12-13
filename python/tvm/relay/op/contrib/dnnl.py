@@ -42,6 +42,8 @@ from tvm.relay.build_module import bind_params_by_name
 from ... import _ffi_api
 from ...dataflow_pattern import wildcard, is_op
 from .register import register_pattern_table
+from tvm.relay import transform
+from tvm.relay.build_module import bind_params_by_name
 
 logger = logging.getLogger("DNNL")
 
