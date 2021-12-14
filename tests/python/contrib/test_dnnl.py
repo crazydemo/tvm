@@ -47,6 +47,8 @@ def assert_result_dict_holds(result_dict):
     for k1, k2 in itertools.combinations(result_dict, 2):
         res1 = vmobj_to_list(result_dict[k1])
         res2 = vmobj_to_list(result_dict[k2])
+        print(k1, res1[0][0][0])
+        print(k2, res2[0][0][0])
         for r1, r2 in zip(res1, res2):
             tvm.testing.assert_allclose(r1, r2, rtol=1e-3, atol=1e-3)
 

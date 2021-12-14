@@ -102,6 +102,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto op_name = node.GetOpName();
         if ("nn.conv2d" == op_name) {
           Conv2d(nid);
+        } else if ("dnnl.conv2d_bias" == op_name) {
+          Conv2d(nid, false, true);
         } else if ("dnnl.conv2d_relu" == op_name) {
           Conv2d(nid, true, false, dnnl::algorithm::eltwise_relu);
         } else if ("dnnl.conv2d_tanh" == op_name) {
