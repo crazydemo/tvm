@@ -68,8 +68,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       // TODO(@comaniac): Support other data lengths.
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-                           offset_in_bytes);
+      if (offset_in_bytes == 0) {
+        entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
+      } else {
+        write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+                             offset_in_bytes);
+      }
     }
 
     // Invoke the engine through intepreting the stream.
@@ -83,8 +87,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       auto eid = EntryID(outputs_[i]);
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-                            offset_in_bytes);
+      if (offset_in_bytes == 0) {
+        entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
+      } else {
+        read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+                              offset_in_bytes);
+      }
     }
   }
 
