@@ -453,7 +453,27 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       ICHECK(comp.defined()) << "DNNL JSON runtime only supports composite functions.";
       name = comp.value();
 
-      if (name == "dnnl.conv2d_bias_relu") {
+      if (name == "dnnl.conv1d_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv1d", "add", "nn.relu"});
+      } else if (name == "dnnl.conv1d_bias_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv1d", "add", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv1d_bias_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv1d", "add", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv1d_bias") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv1d", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv1d_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv1d", "nn.relu"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv1d_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv1d", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv1d_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv1d", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv2d_bias_relu") {
         call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv2d", "add", "nn.relu"});
       } else if (name == "dnnl.conv2d_bias_tanh") {
         call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv2d", "add", "tanh"});
@@ -473,8 +493,86 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name == "dnnl.conv2d_sigmoid") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d", "sigmoid"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv3d", "add", "nn.relu"});
+      } else if (name == "dnnl.conv3d_bias_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv3d", "add", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_bias_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv3d", "add", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_bias") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d", "nn.relu"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv2d_transpose_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv2d_transpose", "add", "nn.relu"});
+      } else if (name == "dnnl.conv2d_transpose_bias_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv2d_transpose", "add", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv2d_transpose_bias_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv2d_transpose", "add", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv2d_transpose_bias") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d_transpose", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv2d_transpose_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d_transpose", "nn.relu"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv2d_transpose_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d_transpose", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv2d_transpose_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d_transpose", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_transpose_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv3d_transpose", "add", "nn.relu"});
+      } else if (name == "dnnl.conv3d_transpose_bias_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv3d_transpose", "add", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_transpose_bias_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.conv3d_transpose", "add", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_transpose_bias") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d_transpose", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_transpose_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d_transpose", "nn.relu"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_transpose_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d_transpose", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.conv3d_transpose_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv3d_transpose", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name == "dnnl.dense_bias") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.dense", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.dense_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.dense", "add", "nn.relu"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.dense_bias_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.dense", "add", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.dense_bias_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.dense", "add", "sigmoid"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.dense_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.dense", "nn.relu"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.dense_tanh") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.dense", "tanh"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.dense_sigmoid") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.dense", "sigmoid"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;
