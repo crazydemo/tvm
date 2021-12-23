@@ -26,6 +26,7 @@ from tvm.relay.build_module import bind_params_by_name
 from tvm.relay.testing.temp_op_attr import TempOpAttr
 from tvm.relay.op.contrib import dnnl
 import tvm.testing
+import numpy as np
 
 
 has_dnnl_codegen = pytest.mark.skipif(
@@ -178,6 +179,79 @@ def run_and_verify_func(config, run_module, target="llvm", dtype="float32"):
 def get_conv1d(
     x_shape=((1, 3, 224)),
     k_shape=(16, 3, 3),
+    groups=1,
+    padding=(1, 1),
+    strides=(1),
+    dilation=(1),
+    channels=None,
+    activation=None,
+    dtype="float32",
+):
+    x = relay.var("x", shape=(x_shape), dtype=dtype)
+    kernel = relay.var("kernel", shape=(k_shape), dtype=dtype)
+    out = relay.nn.conv1d(
+        x,
+        kernel,
+        kernel_size=k_shape[2:3],
+        groups=groups,
+        padding=padding,
+        strides=strides,
+        dilation=dilation,
+        channels=k_shape[0],
+    )
+    dic = {"x": x_shape, "kernel": k_shape}
+    param_lst = ["kernel"]
+
+    if activation == "relu":
+        return relay.nn.relu(out), dic, param_lst
+    elif activation == "tanh":
+        return relay.tanh(out), dic, param_lst
+    elif activation == "sigmoid":
+        return relay.sigmoid(out), dic, param_lst
+    else:
+        return out, dic, param_lst
+
+
+def get_conv1d_bias(x_shape=(1, 3, 224), k_shape=(10, 3, 3), activation=None, dtype="float32"):
+    conv, dic, param_lst = get_conv1d(x_shape=x_shape, k_shape=k_shape, dtype=dtype)
+    bias = relay.var("bias", shape=(k_shape[0],), dtype=dtype)
+    out = relay.nn.bias_add(conv, bias)
+    dic["bias"] = (k_shape[0],)
+    param_lst += ["bias"]
+
+    if activation == "relu":
+        return relay.nn.relu(out), dic, param_lst
+    elif activation == "tanh":
+        return relay.tanh(out), dic, param_lst
+    elif activation == "sigmoid":
+        return relay.sigmoid(out), dic, param_lst
+    else:
+        return out, dic, param_lst
+
+
+def get_conv1d_bias_bn_relu(x_shape=(1, 3, 224), k_shape=(10, 3, 3), dtype="float32"):
+    conv1d_bias, dic, param_lst = get_conv1d_bias(x_shape, k_shape, dtype=dtype)
+    beta = relay.const(np.zeros(k_shape[0]).astype(dtype))
+    gamma = relay.const(np.ones(k_shape[0]).astype(dtype))
+    moving_mean = relay.const(np.zeros(k_shape[0]).astype(dtype))
+    moving_var = relay.const(np.ones(k_shape[0]).astype(dtype))
+    conv1d_bias_bn, _, _ = relay.nn.batch_norm(
+        conv1d_bias,
+        gamma=gamma,
+        beta=beta,
+        moving_mean=moving_mean,
+        moving_var=moving_var,
+        axis=1,
+        center=True,
+        scale=True,
+        epsilon=1e-5,
+    )
+    return relay.nn.relu(conv1d_bias_bn), dic, param_lst
+
+
+def get_conv1d(
+    x_shape=((1, 3, 224)),
+    k_shape=(10, 3, 3),
     groups=1,
     padding=(1, 1),
     strides=(1),
