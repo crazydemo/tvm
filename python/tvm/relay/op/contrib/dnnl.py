@@ -231,6 +231,33 @@ def get_optimal_layout_for_conv(input_size, weight_shape, out_shape, paddings, s
     )
 
 
+def get_optimal_layout_for_deconv(
+    input_size, weight_shape, out_shape, paddings, output_paddings, strides, dilates, G
+):
+    """Get the optimal layout of dnnl, given shape of tranpose conv2d.
+
+    Parameters
+    ----------
+    N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW,G : Int
+                                                     Input argument.
+
+    Returns
+    -------
+    layouts : string
+              The result.
+    """
+    return _ffi_api.get_optimal_layout_for_deconv(
+        input_size,
+        weight_shape,
+        out_shape,
+        paddings,
+        output_paddings,
+        strides,
+        dilates,
+        G,
+    )
+
+
 def alter_conv(attrs, inputs, tinfos, out_type):
     """The convolution's layout auto-query func for dnnl."""
 
@@ -307,6 +334,90 @@ def alter_conv(attrs, inputs, tinfos, out_type):
         return relay.nn.conv3d(data, weight, **new_attrs)
 
 
+def alter_deconv(attrs, inputs, tinfos, out_type):
+    """The transpose convolution's layout auto-query func for dnnl."""
+
+    def get_shape(tensor):
+        if isinstance(tensor, relay.expr.Var):
+            return tensor.type_annotation.concrete_shape
+        elif isinstance(tensor, relay.expr.Constant):
+            return tensor.data.shape
+        elif isinstance(tensor, tvm.ir.tensor_type.TensorType):
+            return tensor.concrete_shape
+        else:
+            raise TypeError("Unsupport data type: %s" % type(tensor))
+
+    def trans_data(input_data, is_weight=False, conv_type=1):
+        if conv_type == 1:
+            data_dic = {"a": "N", "b": "C", "c": "W"}
+            weight_dic = {"a": "O", "b": "I", "c": "W", "d": "G"}
+        elif conv_type == 2:
+            data_dic = {"a": "N", "b": "C", "c": "H", "d": "W"}
+            weight_dic = {"a": "O", "b": "I", "c": "H", "d": "W", "e": "G"}
+        elif conv_type == 3:
+            data_dic = {"a": "N", "b": "C", "c": "D", "d": "H", "e": "W"}
+            weight_dic = {"a": "O", "b": "I", "c": "D", "d": "H", "e": "W", "f": "G"}
+
+        dic = weight_dic if is_weight else data_dic
+        res = ""
+
+        for i in input_data:
+            if i.isupper():
+                i = i.lower()
+                res += dic[i]
+                dic[i] = dic[i].lower()
+            elif i.islower():
+                res += dic[i]
+            elif i.isdigit():
+                res += i
+            else:
+                raise ValueError("Unsupport layout format: %s" % input_data)
+        return res
+
+    data, weight = inputs
+    weight_shape = ",".join([str(x) for x in get_shape(weight)])
+    out_shape = ",".join([str(x) for x in get_shape(out_type)])
+    paddings = ",".join([str(x) for x in attrs.get_int_tuple("padding")])
+    output_paddings = ",".join([str(x) for x in attrs.get_int_tuple("output_padding")])
+    strides = ",".join([str(x) for x in attrs.get_int_tuple("strides")])
+    dilates = ",".join([str(x) for x in attrs.get_int_tuple("dilation")])
+    G = str(attrs.groups)
+    new_attrs = dict(attrs)
+    conv_type = len(get_shape(weight)) - 2
+
+    # To do optimal layout transform for group convolution.
+    # Set group convolution as plain format currently.
+    if int(G) > 1:
+        if conv_type == 1:
+            return relay.nn.conv1d_transpose(data, weight, **attrs)
+        elif conv_type == 2:
+            return relay.nn.conv2d_transpose(data, weight, **attrs)
+        elif conv_type == 3:
+            return relay.nn.conv3d_transpose(data, weight, **attrs)
+
+    res = get_optimal_layout_for_deconv(
+        len(get_shape(weight)),
+        weight_shape,
+        out_shape,
+        paddings,
+        output_paddings,
+        strides,
+        dilates,
+        G,
+    )
+    src_df, weight_df, dst_df = res.split(",")
+    new_attrs["data_layout"] = trans_data(src_df, is_weight=False, conv_type=conv_type)
+    new_attrs["kernel_layout"] = trans_data(weight_df, is_weight=True, conv_type=conv_type)
+    new_attrs["out_layout"] = trans_data(dst_df, is_weight=False, conv_type=conv_type)
+
+    if conv_type == 1:
+        return relay.nn.conv1d_transpose(data, weight, **new_attrs)
+    elif conv_type == 2:
+        return relay.nn.conv2d_transpose(data, weight, **new_attrs)
+    elif conv_type == 3:
+        return relay.nn.conv3d_transpose(data, weight, **new_attrs)
+
+
 def partition_for_dnnl(mod, params=None, alter_layout=True):
     """Partition the graph greedily offloading supported operators to DNNL.
 
@@ -345,14 +456,16 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
         with TempOpAttr("nn.conv1d", "FTVMAlterOpLayout", alter_conv):
             with TempOpAttr("nn.conv2d", "FTVMAlterOpLayout", alter_conv):
                 with TempOpAttr("nn.conv3d", "FTVMAlterOpLayout", alter_conv):
-                    alter_layout_seq = tvm.transform.Sequential(
-                        [
-                            transform.AlterOpLayout(),
-                            transform.FoldConstant(),
-                        ]
-                    )
-                    with tvm.transform.PassContext(opt_level=3):
-                        mod = alter_layout_seq(mod)
+                    with TempOpAttr("nn.conv2d_transpose", "FTVMAlterOpLayout", alter_deconv):
+                        with TempOpAttr("nn.conv3d_transpose", "FTVMAlterOpLayout", alter_deconv):
+                            alter_layout_seq = tvm.transform.Sequential(
+                                [
+                                    transform.AlterOpLayout(),
+                                    transform.FoldConstant(),
+                                ]
+                            )
+                            with tvm.transform.PassContext(opt_level=3):
+                                mod = alter_layout_seq(mod)
 
     byoc_seq = tvm.transform.Sequential(
         [

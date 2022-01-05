@@ -167,13 +167,17 @@ dnnl::memory::dims str2num(std::string str_shape, int input_size) {
 
 std::string get_optimal_layout_for_conv(int input_size, std::string weight_shape,
                                         std::string out_shape, std::string paddings,
-                                        std::string strides, std::string dilates, std::string G, ) {
+                                        std::string strides, std::string dilates, std::string G) {
   dnnl::engine eng(dnnl::engine::kind::cpu, 0);
   dnnl::stream s(eng);
   using tag = dnnl::memory::format_tag;
   using dt = dnnl::memory::data_type;
 
+  dnnl::memory::dim groups = std::stoi(G);
   dnnl::memory::dims weight_dims = str2num(weight_shape, input_size);
+  if (groups > 1) {
+    weight_dims[1] = weight_dims[1] * groups;
+  }
   dnnl::memory::dims out_dims = str2num(out_shape, input_size);
   dnnl::memory::dims padding_dims = str2num(paddings, 2 * (input_size - 2));
   dnnl::memory::dims padding_dims_l(padding_dims.begin(),
@@ -182,7 +186,6 @@ std::string get_optimal_layout_for_conv(int input_size, std::string weight_shape
                                     padding_dims.end());
   dnnl::memory::dims strides_dims = str2num(strides, input_size - 2);
   dnnl::memory::dims dilates_dims = str2num(dilates, input_size - 2);
-  dnnl::memory::dim groups = std::stoi(G);
 
   dnnl::memory::dims input_dims = out_dims;
   input_dims[1] = weight_dims[1];
@@ -232,10 +235,95 @@ std::string get_optimal_layout_for_conv(int input_size, std::string weight_shape
   return res;
 }
 
+std::string get_optimal_layout_for_deconv(int input_size, std::string weight_shape,
+                                          std::string out_shape, std::string paddings,
+                                          std::string output_paddings, std::string strides,
+                                          std::string dilates, std::string G) {
+  dnnl::engine eng(dnnl::engine::kind::cpu, 0);
+  dnnl::stream s(eng);
+  using tag = dnnl::memory::format_tag;
+  using dt = dnnl::memory::data_type;
+
+  dnnl::memory::dim groups = std::stoi(G);
+  dnnl::memory::dims weight_dims = str2num(weight_shape, input_size);
+  if (groups > 1) {
+    weight_dims[1] = weight_dims[1] * groups;
+  }
+  dnnl::memory::dims out_dims = str2num(out_shape, input_size);
+  dnnl::memory::dims padding_dims = str2num(paddings, 2 * (input_size - 2));
+  dnnl::memory::dims padding_dims_l(padding_dims.begin(),
+                                    padding_dims.begin() + padding_dims.size() / 2);
+  dnnl::memory::dims padding_dims_r(padding_dims.end() - padding_dims.size() / 2,
+                                    padding_dims.end());
+  dnnl::memory::dims output_padding_dims = str2num(output_paddings, input_size - 2);
+  dnnl::memory::dims strides_dims = str2num(strides, input_size - 2);
+  dnnl::memory::dims dilates_dims = str2num(dilates, input_size - 2);
+
+  dnnl::memory::dims input_dims = out_dims;
+  if (out_dims[1] == weight_dims[0]) {
+    input_dims[1] = weight_dims[1];
+  } else {
+    input_dims[1] = weight_dims[0];
+    std::swap(weight_dims[0], weight_dims[1]);
+  }
+  for (int i = 2; i < input_size; i++) {
+    dnnl::memory::dim K = weight_dims[i];
+    dnnl::memory::dim S = strides_dims[i - 2];
+    dnnl::memory::dim D = dilates_dims[i - 2] - 1;
+    dnnl::memory::dim PL = padding_dims_l[i - 2];
+    dnnl::memory::dim PR = padding_dims_r[i - 2];
+    dnnl::memory::dim OP = output_padding_dims[i - 2];
+    dnnl::memory::dim DK = 1 + (K - 1) * (D + 1);
+    dilates_dims[i - 2] = D;
+    input_dims[i] = (out_dims[i] - DK + PL + PR - OP) / S + 1;
+  }
+
+  dnnl::memory::dims deconv_src_tz = input_dims;
+  dnnl::memory::dims deconv_weights_tz = weight_dims;
+  if (groups > 1) {
+    deconv_weights_tz = {groups, 1, input_dims[1] / groups};
+    deconv_weights_tz.insert(deconv_weights_tz.end(), weight_dims.begin() + 2, weight_dims.end());
+  }
+  dnnl::memory::dims deconv_bias_tz = {out_dims[1]};
+  dnnl::memory::dims deconv_dst_tz = out_dims;
+  dnnl::memory::dims deconv_strides = strides_dims;
+  dnnl::memory::dims deconv_dilates = dilates_dims;
+  dnnl::memory::dims deconv_padding_l = padding_dims_l;
+  dnnl::memory::dims deconv_padding_r = padding_dims_r;
+
+  auto deconv_src_md = dnnl::memory::desc({deconv_src_tz}, dt::f32, tag::any);
+  auto deconv_weights_md = dnnl::memory::desc({deconv_weights_tz}, dt::f32, tag::any);
+  auto deconv_dst_md = dnnl::memory::desc({deconv_dst_tz}, dt::f32, tag::any);
+
+  auto deconv_desc = dnnl::deconvolution_forward::desc(
+      dnnl::prop_kind::forward_inference, dnnl::algorithm::deconvolution_direct, deconv_src_md,
+      deconv_weights_md, deconv_dst_md, deconv_strides, deconv_dilates, deconv_padding_l,
+      deconv_padding_r);
+
+  auto deconv_prim_desc = dnnl::deconvolution_forward::primitive_desc(deconv_desc, eng);
+
+  auto src_format = deconv_prim_desc.src_desc();
+  auto weights_format = deconv_prim_desc.weights_desc();
+  auto dst_format = deconv_prim_desc.dst_desc();
+  std::string src_df, weight_df, dst_df;
+
+  src_df = md2fmt_tag_str(&src_format);
+  weight_df = md2fmt_tag_str(&weights_format);
+  dst_df = md2fmt_tag_str(&dst_format);
+  std::string res = src_df + "," + weight_df + "," + dst_df;
+  return res;
+}
+
 TVM_REGISTER_GLOBAL("relay.ir.get_optimal_layout_for_conv")
     .set_body([](TVMArgs args, TVMRetValue* rv) {
       *rv = get_optimal_layout_for_conv(args[0], args[1], args[2], args[3], args[4], args[5],
                                         args[6]);
+    });
+
+TVM_REGISTER_GLOBAL("relay.ir.get_optimal_layout_for_deconv")
+    .set_body([](TVMArgs args, TVMRetValue* rv) {
+      *rv = get_optimal_layout_for_deconv(args[0], args[1], args[2], args[3], args[4], args[5],
+                                          args[6], args[7]);
     });
 
 }  // namespace contrib

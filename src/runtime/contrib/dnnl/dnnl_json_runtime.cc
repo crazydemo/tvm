@@ -112,9 +112,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"OWI16o", tag::Owi16o},
       {"NCHW16c", tag::nChw16c},
       {"OIHW16i16o", tag::OIhw16i16o},
+      {"IOHW16i16o", tag::IOhw16i16o},
       {"OHWI16o", tag::Ohwi16o},
       {"NCDHW16c", tag::nCdhw16c},
       {"OIDHW16i16o", tag::OIdhw16i16o},
+      {"IODHW16i16o", tag::IOdhw16i16o},
       {"ODHWI16o", tag::Odhwi16o},
   };
 
@@ -144,9 +146,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   dnnl::memory::dims TransDims2Plain(dnnl::memory::dims input_dims, std::string layout) {
     std::regex dl_plain_reg("NC(D*)(H*)W");
-    std::regex kl_plain_reg("OI(D*)(H*)W");
+    std::regex kl_plain_reg("(OI|IO)(D*)(H*)W");
     std::regex dl_reg("NC(D*)(H*)W\\d{2}c");
-    std::regex kl_reg("OI(D*)(H*)W\\d{2}i\\d{2}o");
+    std::regex kl_oiwxixo_reg("OI(D*)(H*)W\\d{2}i\\d{2}o");
+    std::regex kl_iowxixo_reg("IO(D*)(H*)W\\d{2}i\\d{2}o");
     std::regex kl_owixo_reg("O(D*)(H*)WI\\d{2}o");
     dnnl::memory::dims out_dims;
 
@@ -154,9 +157,14 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       dnnl::memory::dim C = input_dims[1] * input_dims[input_dims.size() - 1];
       out_dims = {input_dims[0], C};
       out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 1);
-    } else if (std::regex_match(layout, kl_reg)) {
+    } else if (std::regex_match(layout, kl_oiwxixo_reg)) {
       dnnl::memory::dim O = input_dims[0] * input_dims[input_dims.size() - 1],
                         I = input_dims[1] * input_dims[input_dims.size() - 2];
+      out_dims = {O, I};
+      out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 2);
+    } else if (std::regex_match(layout, kl_iowxixo_reg)) {
+      dnnl::memory::dim O = input_dims[1] * input_dims[input_dims.size() - 1],
+                        I = input_dims[0] * input_dims[input_dims.size() - 2];
       out_dims = {O, I};
       out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 2);
     } else if (std::regex_match(layout, kl_owixo_reg)) {
@@ -377,6 +385,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                                            str_padding.begin() + str_padding.size() / 2);
     std::vector<std::string> str_padding_r(str_padding.end() - str_padding.size() / 2,
                                            str_padding.end());
+    std::vector<std::string> str_out_padding =
+        node.GetAttr<std::vector<std::string>>("output_padding");
     dnnl::memory::dim groups = std::stoi(node.GetAttr<std::vector<std::string>>("groups")[0]);
     std::string data_layout = node.GetAttr<std::vector<std::string>>("data_layout")[0];
     std::string kernel_layout = node.GetAttr<std::vector<std::string>>("kernel_layout")[0];
@@ -388,31 +398,41 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     }
 
     // Memory shapes.
-    dnnl::memory::dims src_dims = input_shape;       // {N, IC, ID, IH, IW}
-    dnnl::memory::dims weights_dims = weight_shape;  // {OC, IC, KD, KH, KW}
-    if (kernel_layout == "IOHW" || kernel_layout == "OIDHW") {
+    dnnl::memory::dims src_dims = TransDims2Plain(input_shape, data_layout);
+    dnnl::memory::dims weights_dims = TransDims2Plain(weight_shape, kernel_layout);
+    if (weights_dims[0] == src_dims[1] && weights_dims[1] == channels) {
       std::swap(weights_dims[0], weights_dims[1]);
     }
-    if (kernel_layout == "OIDHW") {
-      kernel_layout = "IODHW";
+    dnnl::memory::dims bias_dims = {channels};
+    dnnl::memory::dims strides_dims = TransformStr2Dims(str_strides, "strides");
+    dnnl::memory::dims dilates_dims = TransformStr2Dims(str_dilates, "dilates");
+    dnnl::memory::dims padding_dims_l = TransformStr2Dims(str_padding_l, "padding");
+    dnnl::memory::dims padding_dims_r = TransformStr2Dims(str_padding_r, "padding");
+    dnnl::memory::dims out_padding = TransformStr2Dims(str_out_padding, "padding");
+    dnnl::memory::dims dst_dims = src_dims;
+    dst_dims[1] = channels;
+    for (int i = 2; i < src_dims.size(); i++) {
+      dnnl::memory::dim K = weights_dims[i];
+      dnnl::memory::dim S = strides_dims[i - 2];
+      dnnl::memory::dim D = dilates_dims[i - 2];
+      dnnl::memory::dim PL = padding_dims_l[i - 2];
+      dnnl::memory::dim PR = padding_dims_r[i - 2];
+      dnnl::memory::dim OP = out_padding[i - 2];
+      dnnl::memory::dim DK = 1 + (K - 1) * (D + 1);
+      dst_dims[i] = S * (src_dims[i] - 1) + DK - PL - PR + OP;
     }
+
     if (groups > 1) {
       weights_dims = {groups, 1, input_shape[1] / groups};
       weights_dims.insert(weights_dims.end(), weight_shape.begin() + 2, weight_shape.end());
       kernel_layout.insert(0, "G");
     }
-    dnnl::memory::dims bias_dims = {channels};
-    dnnl::memory::dims dst_dims = out_shape;  // {N, OC, OD, OH, OW}
-    dnnl::memory::dims strides_dims = TransformStr2Dims(str_strides, "strides");
-    dnnl::memory::dims dilates_dims = TransformStr2Dims(str_dilates, "dilates");
-    dnnl::memory::dims padding_dims_l = TransformStr2Dims(str_padding_l, "padding");
-    dnnl::memory::dims padding_dims_r = TransformStr2Dims(str_padding_r, "padding");
 
     // Memory descriptions.
     auto deconv_src_md = dnnl::memory::desc(src_dims, dt::f32, layout_dict[data_layout]);
     auto deconv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, layout_dict[kernel_layout]);
     auto deconv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
-    auto deconv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, layout_dict[data_layout]);
+    auto deconv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::any);
 
     // Transposed covn2d description.
     auto deconv_desc = dnnl::deconvolution_forward::desc(
