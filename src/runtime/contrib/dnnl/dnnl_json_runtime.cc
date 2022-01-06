@@ -93,12 +93,15 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   // Build up the engine based on the input graph.
   std::map<std::string, tag> layout_dict{
       {"NCW", tag::ncw},
+      {"NWC", tag::nwc},
       {"OIW", tag::oiw},
       {"GOIW", tag::goiw},
       {"NCHW", tag::nchw},
+      {"NHWC", tag::nhwc},
       {"OIHW", tag::oihw},
       {"GOIHW", tag::goihw},
       {"NCDHW", tag::ncdhw},
+      {"NDHWC", tag::ndhwc},
       {"OIDHW", tag::oidhw},
       {"GOIDHW", tag::goidhw},
       {"IOHW", tag::iohw},
@@ -147,27 +150,32 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   dnnl::memory::dims TransDims2Plain(dnnl::memory::dims input_dims, std::string layout) {
     std::regex dl_plain_reg("NC(D*)(H*)W");
     std::regex kl_plain_reg("(OI|IO)(D*)(H*)W");
-    std::regex dl_reg("NC(D*)(H*)W\\d{2}c");
-    std::regex kl_oiwxixo_reg("OI(D*)(H*)W\\d{2}i\\d{2}o");
-    std::regex kl_iowxixo_reg("IO(D*)(H*)W\\d{2}i\\d{2}o");
-    std::regex kl_owixo_reg("O(D*)(H*)WI\\d{2}o");
+    std::regex dl_nwc_reg("N(D*)(H*)WC");
+    std::regex dl_nCwxc_reg("NC(D*)(H*)W\\d{2}c");
+    std::regex kl_OIwxixo_reg("OI(D*)(H*)W\\d{2}i\\d{2}o");
+    std::regex kl_IOwxixo_reg("IO(D*)(H*)W\\d{2}i\\d{2}o");
+    std::regex kl_Owixo_reg("O(D*)(H*)WI\\d{2}o");
     dnnl::memory::dims out_dims;
 
-    if (std::regex_match(layout, dl_reg)) {
+    if (std::regex_match(layout, dl_nCwxc_reg)) {
       dnnl::memory::dim C = input_dims[1] * input_dims[input_dims.size() - 1];
       out_dims = {input_dims[0], C};
       out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 1);
-    } else if (std::regex_match(layout, kl_oiwxixo_reg)) {
+    } else if (std::regex_match(layout, dl_nwc_reg)) {
+      dnnl::memory::dim N = input_dims[0], C = input_dims[input_dims.size() - 1];
+      out_dims = {N, C};
+      out_dims.insert(out_dims.end(), input_dims.begin() + 1, input_dims.end() - 1);
+    } else if (std::regex_match(layout, kl_OIwxixo_reg)) {
       dnnl::memory::dim O = input_dims[0] * input_dims[input_dims.size() - 1],
                         I = input_dims[1] * input_dims[input_dims.size() - 2];
       out_dims = {O, I};
       out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 2);
-    } else if (std::regex_match(layout, kl_iowxixo_reg)) {
+    } else if (std::regex_match(layout, kl_IOwxixo_reg)) {
       dnnl::memory::dim O = input_dims[1] * input_dims[input_dims.size() - 1],
                         I = input_dims[0] * input_dims[input_dims.size() - 2];
       out_dims = {O, I};
       out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 2);
-    } else if (std::regex_match(layout, kl_owixo_reg)) {
+    } else if (std::regex_match(layout, kl_Owixo_reg)) {
       dnnl::memory::dim O = input_dims[0] * input_dims[input_dims.size() - 1];
       out_dims = {O, input_dims[input_dims.size() - 2]};
       out_dims.insert(out_dims.end(), input_dims.begin() + 1, input_dims.end() - 2);

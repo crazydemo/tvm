@@ -194,11 +194,8 @@ int32_t Layout::FactorOf(const LayoutAxis& axis) const {
       factor *= val;
     }
   }
-  
   factor = has_sub ? factor : -1;
-
   return factor;
-  // return -1;
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -272,9 +269,15 @@ inline bool GetStoreRule(Array<PrimExpr>* index_rule, Array<PrimExpr>* shape_rul
   }
 
   VLOG(1) << "index rule for " << src_layout.name() << "-->" << dst_layout.name() << ": [ ";
-  for (const auto& r : *index_rule) { VLOG(1) << r << ", "; }; VLOG(1) << "]" << std::endl;
+  for (const auto& r : *index_rule) {
+    VLOG(1) << r << ", ";
+  }
+  VLOG(1) << "]" << std::endl;
   VLOG(1) << "shape rule for " << src_layout.name() << "-->" << dst_layout.name() << ": [ ";
-  for (const auto& r : *shape_rule) { VLOG(1) << r << ", "; }; VLOG(1) << "]" << std::endl;
+  for (const auto& r : *shape_rule) {
+    VLOG(1) << r << ", ";
+  }
+  VLOG(1) << "]" << std::endl;
 
   return true;
 }
@@ -362,12 +365,22 @@ inline Array<PrimExpr> TransformShape(const Array<PrimExpr>& src_shape,
     }
   }
 
-  VLOG(1) << "shape rule for " << Layout(src_axis).name() << "-->" << Layout(target_axis).name() << ": [ ";
-  for (const auto& r : transform_rule) { VLOG(1) << r << ", "; }; VLOG(1) << "]" << std::endl;
+  VLOG(1) << "shape rule for " << Layout(src_axis).name() << "-->" << Layout(target_axis).name()
+          << ": [ ";
+  for (const auto& r : transform_rule) {
+    VLOG(1) << r << ", ";
+  }
+  VLOG(1) << "]" << std::endl;
 
   VLOG(1) << "shape transform: [ ";
-  for (const auto& s : src_shape) { VLOG(1) << s << ", "; }; VLOG(1) << "] --> [ ";
-  for (const auto& r : result) { VLOG(1) << r << ", "; }; VLOG(1) << "]" << std::endl;
+  for (const auto& s : src_shape) {
+    VLOG(1) << s << ", ";
+  }
+  VLOG(1) << "] --> [ ";
+  for (const auto& r : result) {
+    VLOG(1) << r << ", ";
+  }
+  VLOG(1) << "]" << std::endl;
 
   return result;
 }
@@ -375,13 +388,15 @@ inline Array<PrimExpr> TransformShape(const Array<PrimExpr>& src_shape,
 Array<PrimExpr> BijectiveLayout::ForwardShape(const Array<PrimExpr>& shape) const {
   ICHECK(defined()) << "Cannot operate on an undefined bijective layout.";
   const BijectiveLayoutNode* self = operator->();
-  return TransformShape(shape, self->src_layout->axes, self->dst_layout->axes, self->shape_forward_rule);
+  return TransformShape(shape, self->src_layout->axes, self->dst_layout->axes,
+                        self->shape_forward_rule);
 }
 
 Array<PrimExpr> BijectiveLayout::BackwardShape(const Array<PrimExpr>& shape) const {
   ICHECK(defined()) << "Cannot operate on an undefined bijective layout.";
   const BijectiveLayoutNode* self = operator->();
-  return TransformShape(shape, self->dst_layout->axes, self->src_layout->axes, self->shape_backward_rule);
+  return TransformShape(shape, self->dst_layout->axes, self->src_layout->axes,
+                        self->shape_backward_rule);
 }
 
 BijectiveLayout::BijectiveLayout(Layout src_layout, Layout dst_layout) {
@@ -393,7 +408,8 @@ BijectiveLayout::BijectiveLayout(Layout src_layout, Layout dst_layout) {
   // To be consistent with previous behavior, a nullptr layout is created
   // when argument is invalid.
   if (GetStoreRule(&n->index_forward_rule, &n->shape_forward_rule, n->src_layout, n->dst_layout)) {
-    ICHECK(GetStoreRule(&n->index_backward_rule, &n->shape_backward_rule, n->dst_layout, n->src_layout));
+    ICHECK(GetStoreRule(&n->index_backward_rule, &n->shape_backward_rule, n->dst_layout,
+                        n->src_layout));
     data_ = std::move(n);
   }
 }
