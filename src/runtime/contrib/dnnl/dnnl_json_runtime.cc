@@ -91,6 +91,20 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
  private:
   // Build up the engine based on the input graph.
+  std::map<std::string, dnnl::algorithm> elt_name2algo{
+      {"abs", dnnl::algorithm::eltwise_abs},
+      {"exp", dnnl::algorithm::eltwise_exp},
+      {"log", dnnl::algorithm::eltwise_log},
+      {"sqrt", dnnl::algorithm::eltwise_sqrt},
+      {"round", dnnl::algorithm::eltwise_round},
+      {"logsumexp", dnnl::algorithm::eltwise_logsigmoid},
+      {"nn.relu", dnnl::algorithm::eltwise_relu},
+      {"nn.leaky_relu", dnnl::algorithm::eltwise_relu},
+      {"tanh", dnnl::algorithm::eltwise_tanh},
+      {"sigmoid", dnnl::algorithm::eltwise_logistic},
+      {"clip", dnnl::algorithm::eltwise_clip},
+  };
+
   std::map<std::string, tag> layout_dict{
       {"NCW", tag::ncw},
       {"NWC", tag::nwc},
@@ -227,12 +241,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Pooling(nid, dnnl::algorithm::pooling_max);
         } else if (std::regex_match(op_name, avg_pool_pat)) {
           Pooling(nid, dnnl::algorithm::pooling_avg);
-        } else if ("nn.relu" == op_name) {
-          Eltwise(nid, dnnl::algorithm::eltwise_relu);
-        } else if ("tanh" == op_name) {
-          Eltwise(nid, dnnl::algorithm::eltwise_tanh);
-        } else if ("sigmoid" == op_name) {
-          Eltwise(nid, dnnl::algorithm::eltwise_logistic);
+        } else if (elt_name2algo.count(op_name)) {
+          Eltwise(nid);
+        } else if ("nn.softmax" == op_name) {
+          Softmax(nid);
         } else if ("add" == op_name) {
           Binary(nid, dnnl::algorithm::binary_add);
         } else if ("multiply" == op_name) {
@@ -645,20 +657,55 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_args_.push_back({{DNNL_ARG_SRC, pool2d_src_memory}, {DNNL_ARG_DST, pool2d_dst_memory}});
   }
 
-  void Eltwise(const size_t& nid, dnnl::algorithm algo) {
+  void Eltwise(const size_t& nid) {
     auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+    auto algo = elt_name2algo[op_name];
 
     auto data_entry = node.GetInputs()[0];
     dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     dnnl::memory::desc data_md = GenDNNLMemDescByShape(shape, dt::f32);
+    float alpha = 0., beta = 0.;
+    if (op_name == "clip") {
+      alpha = std::stof(node.GetAttr<std::vector<std::string>>("a_min")[0]);
+      beta = std::stof(node.GetAttr<std::vector<std::string>>("a_max")[0]);
+    } else if (op_name == "nn.leaky_relu") {
+      alpha = std::stof(node.GetAttr<std::vector<std::string>>("alpha")[0]);
+    }
 
     auto elt_desc =
-        dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_inference, algo, data_md, 0);
+        dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_inference, algo, data_md, alpha, beta);
     auto elt_prim_desc = dnnl::eltwise_forward::primitive_desc(elt_desc, engine_);
     ICHECK(data_md == elt_prim_desc.dst_desc());
 
     auto elt = dnnl::eltwise_forward(elt_prim_desc);
     net_.push_back(elt);
+
+    auto data_memory = BindDNNLMemory(data_entry, data_md);
+    JSONGraphNodeEntry out_entry(nid, 0);
+    auto out_memory = BindDNNLMemory(out_entry, data_md);
+
+    net_args_.push_back({{DNNL_ARG_SRC, data_memory}, {DNNL_ARG_DST, out_memory}});
+  }
+
+  void Softmax(const size_t& nid) {
+    auto node = nodes_[nid];
+
+    auto data_entry = node.GetInputs()[0];
+    dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    int axis = std::stoi(node.GetAttr<std::vector<std::string>>("axis")[0]);
+    if (axis < 0) {
+      axis = shape.size() + axis;
+    }
+    dnnl::memory::desc data_md = GenDNNLMemDescByShape(shape, dt::f32);
+
+    auto softmax_desc =
+        dnnl::softmax_forward::desc(dnnl::prop_kind::forward_inference, data_md, axis);
+    auto softmax_prim_desc = dnnl::softmax_forward::primitive_desc(softmax_desc, engine_);
+    ICHECK(data_md == softmax_prim_desc.dst_desc());
+
+    auto softmax = dnnl::softmax_forward(softmax_prim_desc);
+    net_.push_back(softmax);
 
     auto data_memory = BindDNNLMemory(data_entry, data_md);
     JSONGraphNodeEntry out_entry(nid, 0);

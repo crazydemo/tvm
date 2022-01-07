@@ -14,7 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import numpy as np
 import pytest
 import itertools
 
@@ -493,19 +492,58 @@ def test_multiple_outputs(run_module, dtype="float32"):
     run_and_verify_func(get_graph(), run_module=run_module, dtype=dtype)
 
 
-def test_unary(run_module):
+def test_elementwise(run_module, dtype="float32"):
     def get_graph(op, x_shape=(1, 8, 3, 3)):
-        x = relay.var("x", shape=(x_shape), dtype="float32")
+        x = relay.var("x", shape=(x_shape), dtype=dtype)
         out = op(x)
         f = tvm.IRModule.from_expr(out)
         return f, {"x": x_shape}, []
 
     for op in [
+        relay.abs,
+        relay.exp,
+        relay.log,
+        relay.sqrt,
+        relay.round,
+        relay.logsumexp,
         relay.nn.relu,
         relay.tanh,
         relay.sigmoid,
     ]:
         run_and_verify_func(get_graph(op), run_module=run_module)
+
+
+def test_clip(run_module, dtype="float32"):
+    def get_graph(x_shape=(1, 8, 3, 3)):
+        x = relay.var("x", shape=(x_shape), dtype=dtype)
+        out = relay.clip(x, a_min=-0.2, a_max=0.4)
+        f = tvm.IRModule.from_expr(out)
+        return f, {"x": x_shape}, []
+
+    run_and_verify_func(get_graph(), run_module=run_module)
+
+
+def test_leaky_relu(run_module, dtype="float32"):
+    def get_graph(x_shape=(1, 8, 3, 3)):
+        x = relay.var("x", shape=(x_shape), dtype=dtype)
+        out = relay.nn.leaky_relu(x, alpha=0.1)
+        f = tvm.IRModule.from_expr(out)
+        return f, {"x": x_shape}, []
+
+    run_and_verify_func(get_graph(), run_module=run_module)
+
+
+def test_softmax(run_module, dtype="float32"):
+    def get_graph(x_shape, axis):
+        x = relay.var("x", shape=(x_shape), dtype=dtype)
+        out = relay.nn.softmax(x, axis=axis)
+        f = tvm.IRModule.from_expr(out)
+        return f, {"x": x_shape}, []
+
+    run_and_verify_func(get_graph((1, 1000), axis=1), run_module=run_module)
+    run_and_verify_func(get_graph((1, 1000), axis=-1), run_module=run_module)
+    run_and_verify_func(get_graph((1, 3, 4), axis=-2), run_module=run_module)
+    run_and_verify_func(get_graph((1, 3, 4), axis=1), run_module=run_module)
 
 
 def test_conv1d(run_module, dtype="float32"):
@@ -825,3 +863,4 @@ if __name__ == "__main__":
     import sys
 
     sys.exit(pytest.main([__file__] + sys.argv[1:]))
+    # test_conv3d_pattern(True)
