@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from gluoncv.model_zoo import get_model
 import pytest
 import itertools
 
@@ -227,7 +228,7 @@ def get_conv2d_transpose(
     out = relay.nn.conv2d_transpose(
         x,
         kernel,
-        channels=k_shape[1],
+        channels=k_shape[1] * groups,
         kernel_size=k_shape[2:4],
         groups=groups,
         padding=padding,
@@ -578,7 +579,7 @@ def test_conv1d_pattern(run_module, dtype="float32"):
 
 def test_conv2d(run_module, dtype="float32"):
     x_shape = (1, 32, 8, 8)
-    for k_shape, groups in [((16, 32, 3, 3), 1), ((32, 1, 3, 3), 32)]:
+    for k_shape, groups in [((16, 32, 3, 3), 1), ((32, 1, 3, 3), 32), ((32, 2, 3, 3), 16)]:
         for padding in [(0, 0), (1, 1)]:
             for strides in [(1, 1), (2, 2)]:
                 for dilation in [(1, 1), (2, 2)]:
@@ -634,14 +635,21 @@ def test_conv2d_pattern(run_module, dtype="float32"):
 
 
 def test_conv2d_transpose(run_module, dtype="float32"):
-    for padding in [(0, 0), (1, 1)]:
-        for strides in [(1, 1), (2, 2)]:
-            conv2d_transpose, dic, param_lst = get_conv2d_transpose(
-                padding=padding, strides=strides, dtype=dtype
-            )
-            conv2d_transpose = tvm.IRModule.from_expr(conv2d_transpose)
-            config = conv2d_transpose, dic, param_lst
-            run_and_verify_func(config, run_module=run_module, dtype=dtype)
+    x_shape = (1, 32, 8, 8)
+    for k_shape, groups in [((32, 16, 3, 3), 1), ((32, 1, 3, 3), 32), ((32, 4, 3, 3), 16)]:
+        for padding in [(0, 0), (1, 1)]:
+            for strides in [(1, 1), (2, 2)]:
+                conv2d_transpose, dic, param_lst = get_conv2d_transpose(
+                    x_shape=x_shape,
+                    k_shape=k_shape,
+                    groups=groups,
+                    padding=padding,
+                    strides=strides,
+                    dtype=dtype,
+                )
+                conv2d_transpose = tvm.IRModule.from_expr(conv2d_transpose)
+                config = conv2d_transpose, dic, param_lst
+                run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
 def test_conv2d_transpose_pattern(run_module, dtype="float32"):
@@ -859,8 +867,23 @@ def test_pool3d(run_module, dtype="float32"):
     run_and_verify_func(get_graph(relay.nn.max_pool3d, strides=(1, 1, 1)), run_module=run_module)
 
 
+def run_and_verify_model(
+    model, run_module, input_shape=(1, 3, 224, 224), target="llvm", dtype="float32"
+):
+    i_data = np.random.uniform(-1, 1, input_shape).astype(dtype)
+    block = get_model(model, pretrained=True)
+    mod, params = relay.frontend.from_mxnet(block, shape={"data": input_shape}, dtype=dtype)
+    run_and_verify(mod, i_data, params, target=target, run_module=run_module)
+
+
+def test_model(run_module, dtype="float32"):
+    run_and_verify_model("ResNet18_v1b", run_module, dtype=dtype)
+    run_and_verify_model("VGG11_bn", run_module, dtype=dtype)
+    run_and_verify_model("InceptionV3", run_module, input_shape=(1, 3, 300, 300), dtype=dtype)
+    run_and_verify_model("MobileNet1.0", run_module, dtype=dtype)
+    # run_and_verify_model("ResNext50_32x4d", run_module, dtype=dtype)
+
 if __name__ == "__main__":
     import sys
 
     sys.exit(pytest.main([__file__] + sys.argv[1:]))
-    # test_conv3d_pattern(True)

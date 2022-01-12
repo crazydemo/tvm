@@ -174,9 +174,14 @@ std::string get_optimal_layout_for_conv(int input_size, std::string weight_shape
   using dt = dnnl::memory::data_type;
 
   dnnl::memory::dim groups = std::stoi(G);
-  dnnl::memory::dims weight_dims = str2num(weight_shape, input_size);
+  dnnl::memory::dims weight_dims_ = str2num(weight_shape, input_size);
+  dnnl::memory::dims weight_dims = weight_dims_;
   if (groups > 1) {
-    weight_dims[1] = weight_dims[1] * groups;
+    if (weight_dims_.size() == 5) {
+      weight_dims = {weight_dims_[0] * weight_dims_[1], weight_dims_[2], weight_dims_[3], weight_dims_[4]};
+    } else {
+      weight_dims[1] = weight_dims[1] * groups;
+    }
   }
   dnnl::memory::dims out_dims = str2num(out_shape, input_size);
   dnnl::memory::dims padding_dims = str2num(paddings, 2 * (input_size - 2));
@@ -203,7 +208,7 @@ std::string get_optimal_layout_for_conv(int input_size, std::string weight_shape
   dnnl::memory::dims conv_src_tz = input_dims;
   dnnl::memory::dims conv_weights_tz = weight_dims;
   if (groups > 1) {
-    conv_weights_tz = {groups, 1, input_dims[1] / groups};
+    conv_weights_tz = {groups, out_dims[1] / groups, input_dims[1] / groups};
     conv_weights_tz.insert(conv_weights_tz.end(), weight_dims.begin() + 2, weight_dims.end());
   }
   dnnl::memory::dims conv_bias_tz = {out_dims[1]};
@@ -245,9 +250,14 @@ std::string get_optimal_layout_for_deconv(int input_size, std::string weight_sha
   using dt = dnnl::memory::data_type;
 
   dnnl::memory::dim groups = std::stoi(G);
-  dnnl::memory::dims weight_dims = str2num(weight_shape, input_size);
+  dnnl::memory::dims weight_dims_ = str2num(weight_shape, input_size);
+  dnnl::memory::dims weight_dims = weight_dims_;
   if (groups > 1) {
-    weight_dims[1] = weight_dims[1] * groups;
+    if (weight_dims_.size() == 5) {
+      weight_dims = {weight_dims_[0] * weight_dims_[1], weight_dims_[2], weight_dims_[3], weight_dims_[4]};
+    } else {
+      weight_dims[1] = weight_dims[1] * groups;
+    }
   }
   dnnl::memory::dims out_dims = str2num(out_shape, input_size);
   dnnl::memory::dims padding_dims = str2num(paddings, 2 * (input_size - 2));
@@ -281,7 +291,7 @@ std::string get_optimal_layout_for_deconv(int input_size, std::string weight_sha
   dnnl::memory::dims deconv_src_tz = input_dims;
   dnnl::memory::dims deconv_weights_tz = weight_dims;
   if (groups > 1) {
-    deconv_weights_tz = {groups, 1, input_dims[1] / groups};
+    deconv_weights_tz = {groups, out_dims[1] / groups, input_dims[1] / groups};
     deconv_weights_tz.insert(deconv_weights_tz.end(), weight_dims.begin() + 2, weight_dims.end());
   }
   dnnl::memory::dims deconv_bias_tz = {out_dims[1]};

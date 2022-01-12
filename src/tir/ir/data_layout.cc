@@ -319,6 +319,7 @@ inline Array<PrimExpr> TransformShape(const Array<PrimExpr>& src_shape,
                                       const Array<PrimExpr>& transform_rule) {
   arith::Analyzer ana;
   ICHECK_EQ(src_shape.size(), src_axis.size());
+  
   // bind variables for original axes
   // for major-axis, bind the corresponding size
   // for minor-axis, simply bind it as 0, so that we can reuse forward/backward_rule,
@@ -404,7 +405,6 @@ BijectiveLayout::BijectiveLayout(Layout src_layout, Layout dst_layout) {
 
   n->src_layout = std::move(src_layout);
   n->dst_layout = std::move(dst_layout);
-
   // To be consistent with previous behavior, a nullptr layout is created
   // when argument is invalid.
   if (GetStoreRule(&n->index_forward_rule, &n->shape_forward_rule, n->src_layout, n->dst_layout)) {
