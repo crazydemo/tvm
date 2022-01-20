@@ -141,11 +141,14 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"NCW16c", tag::nCw16c},
       {"OIW16i16o", tag::OIw16i16o},
       {"OWI16o", tag::Owi16o},
+      {"NCHW4c", tag::nChw4c},
       {"NCHW8c", tag::nChw8c},
       {"NCHW16c", tag::nChw16c},
       {"OIHW8i8o", tag::OIhw8i8o},
       {"OIHW16i16o", tag::OIhw16i16o},
       {"IOHW16i16o", tag::IOhw16i16o},
+      {"GOIHW4i4o", tag::gOIhw4i4o},
+      {"GOIHW8i8o", tag::gOIhw8i8o},
       {"OHWI8o", tag::Ohwi8o},
       {"OHWI16o", tag::Ohwi16o},
       {"OHWI32o", tag::Ohwi32o},
@@ -198,6 +201,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::regex kl_Goihwxg_reg("GOIHW(\\d*)g");
     std::regex kl_hwioGxg_reg("HWIOG(\\d*)g");
     std::regex kl_OIwxixo_reg("OI(D*)(H*)W(\\d*)i(\\d*)o");
+    std::regex kl_GOIwxixo_reg("GOI(D*)(H*)W(\\d*)i(\\d*)o");
     std::regex kl_IOwxixo_reg("IO(D*)(H*)W(\\d*)i(\\d*)o");
     std::regex kl_Owixo_reg("O(D*)(H*)WI(\\d*)o");
     dnnl::memory::dims out_dims;
@@ -234,11 +238,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                         I = input_dims[1] * input_dims[input_dims.size() - 2];
       out_dims = {O, I};
       out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 2);
-    } else if (std::regex_match(layout, kl_IOwxixo_reg)) {
-      dnnl::memory::dim O = input_dims[1] * input_dims[input_dims.size() - 1],
-                        I = input_dims[0] * input_dims[input_dims.size() - 2];
+    } else if (std::regex_match(layout, kl_OIwxixo_reg)) {
+      dnnl::memory::dim O = input_dims[0] * input_dims[input_dims.size() - 1],
+                        I = input_dims[1] * input_dims[input_dims.size() - 2];
       out_dims = {O, I};
       out_dims.insert(out_dims.end(), input_dims.begin() + 2, input_dims.end() - 2);
+    } else if (std::regex_match(layout, kl_GOIwxixo_reg)) {
+      dnnl::memory::dim O = input_dims[1] * input_dims[input_dims.size() - 1],
+                        I = input_dims[2] * input_dims[input_dims.size() - 2] * input_dims[0];
+      out_dims = {O, I};
+      out_dims.insert(out_dims.end(), input_dims.begin() + 3, input_dims.end() - 2);
     } else if (std::regex_match(layout, kl_Owixo_reg)) {
       dnnl::memory::dim O = input_dims[0] * input_dims[input_dims.size() - 1];
       out_dims = {O, input_dims[input_dims.size() - 2]};
@@ -402,9 +411,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::any);
 
     // Covn2d description.
-    auto conv_desc = dnnl::convolution_forward::desc(
+    auto conv_desc = has_bias ? dnnl::convolution_forward::desc(
         dnnl::prop_kind::forward_inference, dnnl::algorithm::convolution_direct, conv_src_md,
         conv_weights_md, conv_bias_md, conv_dst_md, strides_dims, dilates_dims, padding_dims_l,
+        padding_dims_r)
+        : dnnl::convolution_forward::desc(
+        dnnl::prop_kind::forward_inference, dnnl::algorithm::convolution_direct, conv_src_md,
+        conv_weights_md, conv_dst_md, strides_dims, dilates_dims, padding_dims_l,
         padding_dims_r);
 
     // Enable elementwise post-ops.
@@ -440,10 +453,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     BindDNNLMemory(out_entry, conv2d_dst_memory);
 
     // Bind memory buffers.
-    net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
+    if (has_bias) {
+      net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
                          {DNNL_ARG_WEIGHTS, conv2d_weights_memory},
                          {DNNL_ARG_BIAS, conv2d_bias_memory},
                          {DNNL_ARG_DST, conv2d_dst_memory}});
+    } else {
+      net_args_.push_back({{DNNL_ARG_SRC, conv2d_src_memory},
+                         {DNNL_ARG_WEIGHTS, conv2d_weights_memory},
+                         {DNNL_ARG_DST, conv2d_dst_memory}});
+    }
   }
 
   void Deconvolution(const size_t& nid) {

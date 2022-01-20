@@ -63,7 +63,7 @@ def run_and_verify(mod, input, params, target, run_module):
     dev = tvm.cpu()
     result_dict = dict()
     for mode in ["graph", "vm"]:
-        for use_dnnl, alter_layout in [(False, False), (True, False), (True, True)]:
+        for use_dnnl, alter_layout in [(True, False)]:#(False, False), , (True, True)
             result_key = mode + ("_dnnl" if use_dnnl else "")
             if use_dnnl:
                 processed_mod = dnnl.partition_for_dnnl(mod, params, alter_layout)
@@ -877,13 +877,16 @@ def run_and_verify_model(
 
 
 def test_model(run_module, dtype="float32"):
-    run_and_verify_model("ResNet18_v1b", run_module, dtype=dtype)
-    run_and_verify_model("VGG11_bn", run_module, dtype=dtype)
-    run_and_verify_model("InceptionV3", run_module, input_shape=(1, 3, 300, 300), dtype=dtype)
-    run_and_verify_model("MobileNet1.0", run_module, dtype=dtype)
-    # run_and_verify_model("ResNext50_32x4d", run_module, dtype=dtype)
+    # run_and_verify_model("ResNet18_v1b", run_module, dtype=dtype)
+    # run_and_verify_model("VGG11_bn", run_module, dtype=dtype)
+    # run_and_verify_model("InceptionV3", run_module, input_shape=(1, 3, 300, 300), dtype=dtype)
+    # run_and_verify_model("MobileNet1.0", run_module, dtype=dtype)
+    run_and_verify_model("ResNext50_32x4d", run_module, dtype=dtype)
 
 if __name__ == "__main__":
     import sys
+    import os
+    # os.environ["TVM_LOG_DEBUG"] = "DEFAULT=1"
 
-    sys.exit(pytest.main([__file__] + sys.argv[1:]))
+    # sys.exit(pytest.main([__file__] + sys.argv[1:]))
+    test_model(True)

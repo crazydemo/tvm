@@ -216,7 +216,7 @@ def pattern_table():
         Created patterns.
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", None]
-    dnnl_patterns = []
+    dnnl_patterns = [("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern())]
     for with_bias in [True, False]:
         for elt in elt_list:
             if not with_bias and not elt:
@@ -230,7 +230,6 @@ def pattern_table():
             ]:
                 dnnl_patterns.append(make_dnnl_pattern(conv_name, with_bias, elt))
             dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, elt))
-            dnnl_patterns.append(("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern()))
     return dnnl_patterns
 
 
@@ -450,14 +449,21 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
         with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", legalize_group_deconv):
             seq = tvm.transform.Sequential(
                 [
+                    # tvm.transform.PrintIR(),
                     transform.CanonicalizeOps(),
+                    # tvm.transform.PrintIR(),
                     transform.InferType(),
+                    # tvm.transform.PrintIR(),
                     transform.SimplifyInference(),
+                    # tvm.transform.PrintIR(),
                     transform.FoldConstant(),
+                    # tvm.transform.PrintIR(),
                     transform.FoldScaleAxis(),
+                    # tvm.transform.PrintIR(),
                     # fold consecutive add ops to simplify pattern `conv2d-bias_add-bn-relu`
                     transform.SimplifyExpr(),
                     transform.FoldConstant(),
+                    # tvm.transform.PrintIR(),
                     # alter group conv's layout to `GOIHW`
                     transform.Legalize(),
                     transform.FoldConstant(),
@@ -477,6 +483,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                                 [
                                     transform.AlterOpLayout(),
                                     transform.FoldConstant(),
+                                    # tvm.transform.PrintIR(),
                                 ]
                             )
                             with tvm.transform.PassContext(opt_level=3):
@@ -484,10 +491,12 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
 
     byoc_seq = tvm.transform.Sequential(
         [
+            tvm.transform.PrintIR(),
             transform.MergeComposite(pattern_table()),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
+            tvm.transform.PrintIR(),
         ]
     )
     with tvm.transform.PassContext(opt_level=3):
