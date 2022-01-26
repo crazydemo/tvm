@@ -334,6 +334,14 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dim groups = std::stoi(node.GetAttr<std::vector<std::string>>("groups")[0]);
     std::string data_layout = node.GetAttr<std::vector<std::string>>("data_layout")[0];
     std::string kernel_layout = node.GetAttr<std::vector<std::string>>("kernel_layout")[0];
+    std::string out_layout = "";
+    if (node.HasAttr("out_layout")) {
+      if (node.GetAttr<std::vector<std::string>>("out_layout")[0] != "") {
+        out_layout = node.GetAttr<std::vector<std::string>>("out_layout")[0];
+      } else {
+        out_layout = data_layout;
+      }
+    }
 
     // Check layout.
     if (layout_dict.find(data_layout) == layout_dict.end()) {
