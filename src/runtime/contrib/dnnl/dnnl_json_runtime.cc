@@ -178,15 +178,18 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"ODHWI16o", tag::Odhwi16o},
   };
 
-  bool ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
+  void ParsingPostOps(const std::string op_name, dnnl::primitive_attr attr) {
     // Define RegExp.
-    std::regex bias_add_pat(".*_bias.*");
+    std::regex sum_pat(".*_sum.*");
     std::regex relu_pat(".*_relu.*");
     std::regex tanh_pat(".*_tanh.*");
     std::regex sigmoid_pat(".*_sigmoid.*");
 
     // Parsing post-ops.
     dnnl::post_ops ops;
+    if (std::regex_match(op_name, sum_pat)) {
+      ops.append_sum(1.f);
+    }
     if (std::regex_match(op_name, relu_pat)) {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 0.f);
     }
@@ -197,9 +200,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_logistic, 0.f, 0.f);
     }
     attr.set_post_ops(ops);
-
-    // Parsing bias_add.
-    return std::regex_match(op_name, bias_add_pat) ? true : false;
   }
 
   dnnl::memory::dims TransDims2Plain(dnnl::memory::dims input_dims, std::string layout) {
@@ -329,8 +329,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Convolution(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
+    // Attach post-ops.
     dnnl::primitive_attr attr;
-    bool has_bias = ParsingOpName(op_name, attr);
+    ParsingPostOps(op_name, attr);
+    bool has_bias = op_name.find("_bias") != std::string::npos;
+    bool has_sum = op_name.find("_sum") != std::string::npos;
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
@@ -434,7 +437,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_weights_memory = BindDNNLMemory(weight_entry, conv_prim_desc.weights_desc());
 
     // Output memory.
-    auto conv_dst_memory = BindDNNLMemory(out_entry, conv_prim_desc.dst_desc());
+    // auto conv2d_dst_memory = BindDNNLMemory(out_entry, conv2d_prim_desc.dst_desc());
+    auto conv2d_dst_memory = dnnl::memory(conv2d_prim_desc.dst_desc(), engine_);
+    if (has_sum) {
+      auto dst_entry = node.GetInputs()[3];
+      conv2d_dst_memory = BindDNNLMemory(dst_entry, conv2d_prim_desc.dst_desc());
+    }
+    BindDNNLMemory(out_entry, conv2d_dst_memory);
 
     // Bias memory.
     auto conv_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
@@ -458,8 +467,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Deconvolution(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
+    // Attach post-ops.
     dnnl::primitive_attr attr;
-    bool has_bias = ParsingOpName(op_name, attr);
+    ParsingPostOps(op_name, attr);
+    bool has_bias = op_name.find("_bias") != std::string::npos;
+    bool has_sum = op_name.find("_sum") != std::string::npos;
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
@@ -586,8 +598,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Dense(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
+    // Attach post-ops.
     dnnl::primitive_attr attr;
-    bool has_bias = ParsingOpName(op_name, attr);
+    ParsingPostOps(op_name, attr);
+    bool has_bias = op_name.find("_bias") != std::string::npos;
+    bool has_sum = op_name.find("_sum") != std::string::npos;
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
