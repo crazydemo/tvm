@@ -513,7 +513,7 @@ Array<Message> Conv2DForwardPrep(const Call& call, const Message& out_message) {
   // only handle depthwise or full conv2d.
   // TODO(tvm-team) handle grouped conv by reshape + bcast
   bool is_depthwise_conv2d = IsDepthwiseConv2D(call, param, kernel_layout);
-  if (param->groups == 1 || is_depthwise_conv2d) {
+  if (param->groups >= 1 || is_depthwise_conv2d) {
     auto ko_small_axis = kernel_layout.IndexOf(LayoutAxis::Get('o'));
     auto ki_small_axis = kernel_layout.IndexOf(LayoutAxis::Get('i'));
     if ((ko_small_axis < 0 && ki_small_axis < 0 && c_small_axis < 0) ||     // simple layout
@@ -553,12 +553,24 @@ Expr Conv2DForwardRewrite(const Call& ref_call, const Array<Expr>& new_args,
 
   // Check it must be depthwise or full conv2d.
   bool is_depthwise_conv2d = IsDepthwiseConv2D(ref_call, param, kernel_layout);
-  ICHECK(param->groups == 1 || is_depthwise_conv2d);
+  ICHECK(param->groups >= 1 || is_depthwise_conv2d);
 
   Expr weight = new_args[1];
 
   // match the ic_axis
-  if (is_depthwise_conv2d) {
+  // for group conv with simple layout OIHW
+  if (param->groups > 1 && !is_depthwise_conv2d) {
+    if (is_simple) {
+      const Array<PrimExpr>& weight_shape_ = weight->type_as<TensorTypeNode>()->shape;
+      auto IC = weight_shape_[1] * param->groups;
+      Array<PrimExpr> weight_shape = {weight_shape_[0], IC};
+      weight_shape.insert(weight_shape.end(), weight_shape_.begin() + 2, weight_shape_.end());
+      Expr scale = ReshapeToMatchAxis(sdata->scale, weight_shape, {big_ki_axis});
+      weight = Multiply(weight, scale);
+    }
+    if (!weight.defined()) return Expr();
+  // for depthwise conv
+  } else if (is_depthwise_conv2d) {
     if (is_simple) {
       Expr scale = ExpandBiasToMatchAxis(sdata->scale, kernel_layout.ndim(), {big_ko_axis});
       weight = Multiply(weight, scale);
@@ -955,7 +967,7 @@ Message Conv2DBackwardPrep(const Call& call, const Array<Message>& in_messages) 
   // only handle depthwise or full conv2d.
   // TODO(tvm-team) handle grouped conv by reshape + bcast
   bool is_depthwise_conv2d = IsDepthwiseConv2D(call, param, kernel_layout);
-  if (param->groups == 1 || is_depthwise_conv2d) {
+  if (param->groups >= 1 || is_depthwise_conv2d) {
     auto ko_small_axis = kernel_layout.IndexOf(LayoutAxis::Get('o'));
     auto ki_small_axis = kernel_layout.IndexOf(LayoutAxis::Get('i'));
     if ((ko_small_axis < 0 && ki_small_axis < 0 && c_small_axis < 0) ||     // simple layout
@@ -990,7 +1002,7 @@ Expr Conv2DBackwardTransform(const Call& call, const Message& message, const Exp
   int big_ko_axis = kernel_layout.IndexOf(LayoutAxis::Get('O'));
   // Check it must be depthwise or full conv2d.
   bool is_depthwise_conv2d = IsDepthwiseConv2D(call, param, kernel_layout);
-  ICHECK(param->groups == 1 || is_depthwise_conv2d);
+  ICHECK(param->groups >= 1 || is_depthwise_conv2d);
   bool is_simple = (small_ko_axis < 0 && small_ki_axis < 0 && big_ki_axis >= 0);
   bool is_blocking = (small_ko_axis >= 0 && small_ki_axis >= 0 && big_ki_axis >= 0);
   ICHECK(is_simple || is_blocking);
