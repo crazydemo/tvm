@@ -176,6 +176,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"IODHW8i8o", tag::any},
       {"ODHWI8o", tag::Odhwi8o},
       {"ODHWI16o", tag::Odhwi16o},
+      {"ODHWI32o", tag::Odhwi32o},
+      {"ODHWI48o", tag::Odhwi48o},
+      {"ODHWI64o", tag::Odhwi64o},
   };
 
   void ParsingPostOps(const std::string op_name, dnnl::primitive_attr attr) {
@@ -412,7 +415,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
     auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::any);
 
-    // Covn2d description.
+    // Conv description.
     auto conv_desc =
         has_bias ? dnnl::convolution_forward::desc(
                        dnnl::prop_kind::forward_inference, dnnl::algorithm::convolution_direct,
@@ -437,13 +440,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_weights_memory = BindDNNLMemory(weight_entry, conv_prim_desc.weights_desc());
 
     // Output memory.
-    // auto conv2d_dst_memory = BindDNNLMemory(out_entry, conv2d_prim_desc.dst_desc());
-    auto conv2d_dst_memory = dnnl::memory(conv2d_prim_desc.dst_desc(), engine_);
+    // auto conv_dst_memory = BindDNNLMemory(out_entry, conv_prim_desc.dst_desc());
+    auto conv_dst_memory = dnnl::memory(conv_prim_desc.dst_desc(), engine_);
     if (has_sum) {
       auto dst_entry = node.GetInputs()[3];
-      conv2d_dst_memory = BindDNNLMemory(dst_entry, conv2d_prim_desc.dst_desc());
+      conv_dst_memory = BindDNNLMemory(dst_entry, conv_prim_desc.dst_desc());
     }
-    BindDNNLMemory(out_entry, conv2d_dst_memory);
+    BindDNNLMemory(out_entry, conv_dst_memory);
 
     // Bias memory.
     auto conv_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);

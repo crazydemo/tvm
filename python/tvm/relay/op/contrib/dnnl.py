@@ -120,12 +120,12 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     return conv_out
 
 
-def make_conv_add_sum_relu_pattern():
+def make_conv_add_sum_relu_pattern(conv_type):
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
-    out = is_op("nn.conv2d")(data1, weight)
+    out = is_op(conv_type)(data1, weight)
     out = is_op("add")(out, bias)
     out = is_op("add")(out, data2)
     out = is_op("nn.relu")(out)
@@ -204,7 +204,8 @@ def pattern_table():
         Created patterns.
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", None]
-    dnnl_patterns = [("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern())]
+    dnnl_patterns = [("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")), 
+                     ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d"))]
     for with_bias in [True, False]:
         for elt in elt_list:
             if not with_bias and not elt:

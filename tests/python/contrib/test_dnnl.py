@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from cgi import test
 from gluoncv.model_zoo import get_model
 import pytest
 import itertools
@@ -952,6 +953,8 @@ def test_model(run_module, dtype="float32"):
     run_and_verify_model("VGG11_bn", run_module, dtype=dtype)
     run_and_verify_model("InceptionV3", run_module, input_shape=(1, 3, 300, 300), dtype=dtype)
     run_and_verify_model("MobileNet1.0", run_module, dtype=dtype)
+    run_and_verify_model("ResNext50_32x4d", run_module, dtype=dtype)
+    run_and_verify_model("i3d_resnet50_v1_kinetics400", run_module, input_shape=(1, 3, 20, 224, 224), dtype=dtype)
 
 
 if __name__ == "__main__":
