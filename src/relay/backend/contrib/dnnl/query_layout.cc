@@ -242,7 +242,6 @@ std::string get_optimal_layout_for_conv(std::string data_layout, std::string ker
     conv_weights_dims = {groups, out_dims[1] / groups, input_dims[1] / groups};
     conv_weights_dims.insert(conv_weights_dims.end(), weight_dims.begin() + 2, weight_dims.end());
   }
-
   dnnl::memory::dims conv_dst_dims = out_dims;
   dnnl::memory::dims conv_strides = strides_dims;
   dnnl::memory::dims conv_dilates = dilates_dims;
