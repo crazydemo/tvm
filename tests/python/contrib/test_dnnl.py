@@ -947,8 +947,11 @@ def run_and_verify_model(
         mod, params = relay.frontend.from_mxnet(block, shape={"data": input_shape}, dtype=dtype)
     else:
         import onnx
+
         onnx_model = onnx.load("/home2/zhangya9/onnx_models/3DUnet_224_224_160.onnx")
-        mod, params = relay.frontend.from_onnx(onnx_model, shape={"input": input_shape}, dtype=dtype)
+        mod, params = relay.frontend.from_onnx(
+            onnx_model, shape={"input": input_shape}, dtype=dtype
+        )
     run_and_verify(mod, i_data, params, target=target, run_module=run_module)
 
 
@@ -959,8 +962,11 @@ def test_model(run_module, dtype="float32"):
     run_and_verify_model("InceptionV3", run_module, input_shape=(1, 3, 300, 300), dtype=dtype)
     run_and_verify_model("MobileNet1.0", run_module, dtype=dtype)
     run_and_verify_model("ResNext50_32x4d", run_module, dtype=dtype)
-    run_and_verify_model("i3d_resnet50_v1_kinetics400", run_module, input_shape=(1, 3, 20, 224, 224), dtype=dtype)
+    run_and_verify_model(
+        "i3d_resnet50_v1_kinetics400", run_module, input_shape=(1, 3, 20, 224, 224), dtype=dtype
+    )
     run_and_verify_model("3DUnet", run_module, input_shape=(1, 4, 160, 224, 224), dtype=dtype)
+
 
 if __name__ == "__main__":
     import sys

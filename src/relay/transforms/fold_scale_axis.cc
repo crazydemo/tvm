@@ -569,7 +569,7 @@ Expr Conv2DForwardRewrite(const Call& ref_call, const Array<Expr>& new_args,
       weight = Multiply(weight, scale);
     }
     if (!weight.defined()) return Expr();
-  // for depthwise conv
+    // for depthwise conv
   } else if (is_depthwise_conv2d) {
     if (is_simple) {
       Expr scale = ExpandBiasToMatchAxis(sdata->scale, kernel_layout.ndim(), {big_ko_axis});
@@ -600,7 +600,6 @@ RELAY_REGISTER_OP("nn.conv2d").set_attr<FForwardPrep>("FScaleAxisForwardPrep", C
 
 RELAY_REGISTER_OP("nn.conv2d")
     .set_attr<FForwardRewrite>("FScaleAxisForwardRewrite", Conv2DForwardRewrite);
-
 
 // Consumer operators
 // Conv3D send out requirement of axis folding.
@@ -680,7 +679,7 @@ Expr Conv3DForwardRewrite(const Call& ref_call, const Array<Expr>& new_args,
       weight = Multiply(weight, scale);
     }
     if (!weight.defined()) return Expr();
-  // for depthwise conv
+    // for depthwise conv
   } else if (is_depthwise_conv3d) {
     if (is_simple) {
       Expr scale = ExpandBiasToMatchAxis(sdata->scale, kernel_layout.ndim(), {big_ko_axis});
@@ -711,7 +710,6 @@ RELAY_REGISTER_OP("nn.conv3d").set_attr<FForwardPrep>("FScaleAxisForwardPrep", C
 
 RELAY_REGISTER_OP("nn.conv3d")
     .set_attr<FForwardRewrite>("FScaleAxisForwardRewrite", Conv3DForwardRewrite);
-
 
 // Dense send out requirement of axis folding.
 Array<Message> DenseForwardPrep(const Call& call, const Message& out_message) {
@@ -1142,7 +1140,6 @@ RELAY_REGISTER_OP("nn.conv2d")
 RELAY_REGISTER_OP("nn.conv2d")
     .set_attr<FBackwardTransform>("FScaleAxisBackwardTransform", Conv2DBackwardTransform);
 
-
 // Consumer operators
 // Conv3D send out requirement of axis folding.
 Message Conv3DBackwardPrep(const Call& call, const Array<Message>& in_messages) {
@@ -1224,7 +1221,6 @@ RELAY_REGISTER_OP("nn.conv3d")
 
 RELAY_REGISTER_OP("nn.conv3d")
     .set_attr<FBackwardTransform>("FScaleAxisBackwardTransform", Conv3DBackwardTransform);
-
 
 Message BiasAddBackwardPrep(const Call& call, const Array<Message>& in_messages) {
   const BiasAddAttrs* attrs = call->attrs.as<BiasAddAttrs>();

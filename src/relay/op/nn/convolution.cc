@@ -585,7 +585,7 @@ bool Conv3DTransposeRel(const Array<Type>& types, int num_inputs, const Attrs& a
   if (data == nullptr) return false;
 
   static const Layout kNCDHW("NCDHW");
-  static const Layout kOIDHW("OIDHW");
+  static const Layout kIODHW("IODHW");
 
   const Conv3DTransposeAttrs* param = attrs.as<Conv3DTransposeAttrs>();
   ICHECK(param != nullptr);
@@ -597,9 +597,9 @@ bool Conv3DTransposeRel(const Array<Type>& types, int num_inputs, const Attrs& a
       << "Conv3d_transpose only support input layouts that are convertible from NCDHW."
       << " But got " << in_layout;
 
-  const auto trans_kernel_layout = tir::BijectiveLayout(kernel_layout, kOIDHW);
+  const auto trans_kernel_layout = tir::BijectiveLayout(kernel_layout, kIODHW);
   ICHECK(trans_kernel_layout.defined())
-      << "Conv3d_transpose only support kernel layouts that are convertible from OIDHW."
+      << "Conv3d_transpose only support kernel layouts that are convertible from IODHW."
       << " But got " << kernel_layout;
 
   Layout out_layout(param->out_layout == "" ? param->data_layout : param->out_layout);

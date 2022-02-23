@@ -204,8 +204,10 @@ def pattern_table():
         Created patterns.
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", None]
-    dnnl_patterns = [("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")), 
-                     ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d"))]
+    dnnl_patterns = [
+        ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
+        ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
+    ]
     for with_bias in [True, False]:
         for elt in elt_list:
             if not with_bias and not elt:
