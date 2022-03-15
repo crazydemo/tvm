@@ -335,8 +335,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Attach post-ops.
     dnnl::primitive_attr attr;
     ParsingPostOps(op_name, attr);
-    bool has_bias = op_name.find("_bias") != std::string::npos;
-    bool has_sum = op_name.find("_sum") != std::string::npos;
+    bool has_bias = false, has_sum = false;
+    auto bias_entry = node.GetInputs()[0], sum_entry = node.GetInputs()[0];
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
@@ -409,6 +409,31 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       }
     }
 
+    // Check if has bias or sum post_op.
+    if (node.GetInputs().size() > 2) {
+      dnnl::memory::dim dst_size = 1;
+      for (size_t i = 0; i<dst_dims.size(); i++) {
+        if (dst_dims[i] == 0) break;
+        dst_size *= dst_dims[i];
+      }
+      for (size_t i = 2; i < node.GetInputs().size(); i++) {
+        auto add_entry = node.GetInputs()[i];
+        dnnl::memory::dims add_dims = nodes_[add_entry.id_].GetOpShape()[add_entry.index_];
+        dnnl::memory::dim add_size = 1;
+        for (size_t i = 0; i<add_dims.size(); i++) {
+          if (add_dims[i] == 0) break;
+          add_size *= add_dims[i];
+        }
+        if (add_size == dst_size) {
+          sum_entry = add_entry;
+          has_sum = true;
+        } else {
+          bias_entry = add_entry;
+          has_bias = true;
+        }
+      }
+    }
+
     // Memory descriptions.
     auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, layout_dict[data_layout]);
     auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, layout_dict[kernel_layout]);
@@ -443,15 +468,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // auto conv_dst_memory = BindDNNLMemory(out_entry, conv_prim_desc.dst_desc());
     auto conv_dst_memory = dnnl::memory(conv_prim_desc.dst_desc(), engine_);
     if (has_sum) {
-      auto dst_entry = node.GetInputs()[3];
-      conv_dst_memory = BindDNNLMemory(dst_entry, conv_prim_desc.dst_desc());
+      conv_dst_memory = BindDNNLMemory(sum_entry, conv_prim_desc.dst_desc());
     }
     BindDNNLMemory(out_entry, conv_dst_memory);
 
     // Bias memory.
     auto conv_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
     if (has_bias) {
-      auto bias_entry = node.GetInputs()[2];
       BindDNNLMemory(bias_entry, conv_bias_memory);
 
       // Bind memory buffers.
