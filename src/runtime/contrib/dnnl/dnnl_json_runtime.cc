@@ -823,15 +823,22 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::vector<dnnl::memory> data_memories;
 
     ICHECK_EQ(node.GetInputs().size(), 2U);
-    for (auto entry : node.GetInputs()) {
+    for (size_t i=0; i<node.GetInputs().size(); i++) {
+      auto entry = node.GetInputs()[i];
       auto data_shape = nodes_[entry.id_].GetOpShape()[entry.index_];
+      if (i > 0) {
+        if (!data_shape.size()) data_shape = {1};
+        while (data_shape.size() < data_dims[0].size()) {
+          data_shape.insert(data_shape.begin(), 1);
+        }
+      }
       dnnl::memory::desc data_md = GenDNNLMemDescByShape(data_shape, dt::f32);
 
       data_dims.push_back(data_shape);
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
     }
-    ICHECK(data_dims[0] == data_dims[1]);
+
     auto out_md = data_mds[0];
     JSONGraphNodeEntry out_entry(nid, 0);
     auto out_memory = BindDNNLMemory(out_entry, out_md);

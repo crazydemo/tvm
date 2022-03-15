@@ -106,6 +106,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
     )
     with tvm.transform.PassContext(opt_level=3):
         mod = byoc_seq(mod)
+        mod = dnnl.prune_dnnl_subgraphs(mod)
     return mod
 
 
@@ -141,6 +142,7 @@ def run_and_verify(mod, input, params, target, run_module):
             if use_dnnl:
                 processed_mod = partition_for_dnnl(mod, params, alter_layout)
                 check_dnnl_used(processed_mod)
+                print(processed_mod)
             else:
                 processed_mod = mod
             with tvm.transform.PassContext(opt_level=3):
@@ -957,7 +959,7 @@ def run_and_verify_model(
 
 @pytest.mark.skip(reason="takes a long time for this test ")
 def test_model(run_module, dtype="float32"):
-    run_and_verify_model("ResNet50_v1b", run_module, dtype=dtype)
+    run_and_verify_model("ResNet50_v2", run_module, dtype=dtype)
     run_and_verify_model("VGG11_bn", run_module, dtype=dtype)
     run_and_verify_model("InceptionV3", run_module, input_shape=(1, 3, 300, 300), dtype=dtype)
     run_and_verify_model("MobileNet1.0", run_module, dtype=dtype)
