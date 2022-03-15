@@ -413,7 +413,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, layout_dict[data_layout]);
     auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, layout_dict[kernel_layout]);
     auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
-    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::any);
+    auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, layout_dict[out_layout]);
 
     // Conv description.
     auto conv_desc =
