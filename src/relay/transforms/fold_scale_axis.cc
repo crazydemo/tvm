@@ -531,6 +531,7 @@ Array<Message> Conv2DForwardPrep(const Call& call, const Message& out_message) {
 // Conv2D consumes the scale axis during transformation.
 Expr Conv2DForwardRewrite(const Call& ref_call, const Array<Expr>& new_args,
                           const Message& message) {
+  std::cout<<"Conv2DForwardRewrite"<<std::endl;
   // if data do not have scale, normal transform path.
   const auto* sdata = new_args[0].as<ScaledExprNode>();
   const auto* sweight = new_args[1].as<ScaledExprNode>();
@@ -538,10 +539,12 @@ Expr Conv2DForwardRewrite(const Call& ref_call, const Array<Expr>& new_args,
   if (sweight != nullptr) return Expr();
   const auto* param = ref_call->attrs.as<Conv2DAttrs>();
   ICHECK(param != nullptr);
+  std::cout<<"ICHECK(param != nullptr)"<<std::endl;
   Layout data_layout(param->data_layout);
   Layout kernel_layout(param->kernel_layout);
   int c_big_axis = data_layout.IndexOf(LayoutAxis::Get('C'));
   ICHECK_GE(c_big_axis, 0);
+  std::cout<<"ICHECK_GE(c_big_axis, 0);"<<std::endl;
   int small_ko_axis = kernel_layout.IndexOf(LayoutAxis::Get('o'));
   int small_ki_axis = kernel_layout.IndexOf(LayoutAxis::Get('i'));
   int big_ki_axis = kernel_layout.IndexOf(LayoutAxis::Get('I'));
@@ -550,21 +553,35 @@ Expr Conv2DForwardRewrite(const Call& ref_call, const Array<Expr>& new_args,
   bool is_simple = (small_ko_axis < 0 && small_ki_axis < 0 && big_ki_axis >= 0);
   bool is_blocking = (small_ko_axis >= 0 && small_ki_axis >= 0 && big_ki_axis >= 0);
   ICHECK(is_simple || is_blocking);
+  std::cout<<"ICHECK(is_simple || is_blocking)"<<std::endl;
 
   // Check it must be depthwise or full conv2d.
   bool is_depthwise_conv2d = IsDepthwiseConv2D(ref_call, param, kernel_layout);
   ICHECK(param->groups >= 1 || is_depthwise_conv2d);
+  std::cout<<"ICHECK(param->groups >= 1 || is_depthwise_conv2d);"<<std::endl;
 
   Expr weight = new_args[1];
 
   // match the ic_axis
-  // for group conv with simple layout OIHW
+  // for group conv with simple layout
+  std::cout<<"if (param->groups > 1 && !is_depthwise_conv2d)"<<std::endl;
   if (param->groups > 1 && !is_depthwise_conv2d) {
     if (is_simple) {
-      const Array<PrimExpr>& weight_shape_ = weight->type_as<TensorTypeNode>()->shape;
-      auto IC = weight_shape_[1] * param->groups;
-      Array<PrimExpr> weight_shape = {weight_shape_[0], IC};
-      weight_shape.insert(weight_shape.end(), weight_shape_.begin() + 2, weight_shape_.end());
+      Array<PrimExpr> weight_shape_ = weight->type_as<TensorTypeNode>()->shape;
+      auto IC = weight_shape_[big_ki_axis] * param->groups;
+      std::cout<<"IC: "<<IC<<std::endl;
+      std::cout<<"big_ki_axis: "<<big_ki_axis<<std::endl;
+      Array<PrimExpr> weight_shape = {IC};
+      weight_shape.insert(weight_shape.begin(), weight_shape_.begin(), weight_shape_.begin() + big_ki_axis);
+      for (auto i: weight_shape) {
+        std::cout<<i<<" ";
+      }
+      std::cout<<std::endl;
+      weight_shape.insert(weight_shape.end(), weight_shape_.begin() + big_ki_axis + 1, weight_shape_.end());
+      for (auto i: weight_shape) {
+        std::cout<<i<<" ";
+      }
+      std::cout<<std::endl;
       Expr scale = ReshapeToMatchAxis(sdata->scale, weight_shape, {big_ki_axis});
       weight = Multiply(weight, scale);
     }
@@ -1063,6 +1080,7 @@ RELAY_REGISTER_OP("multiply")
 // Consumer operators
 // Conv2D send out requirement of axis folding.
 Message Conv2DBackwardPrep(const Call& call, const Array<Message>& in_messages) {
+  std::cout<<"Conv2DBackwardPrep"<<std::endl;
   const auto* param = call->attrs.as<Conv2DAttrs>();
   ICHECK(param != nullptr);
   Layout kernel_layout(param->kernel_layout);
