@@ -46,7 +46,35 @@ from ...dataflow_pattern import wildcard, is_op
 from .register import register_pattern_table
 
 logger = logging.getLogger("DNNL")
-
+dnnl_supported_ops = [
+                "nn.batch_norm",
+                "nn.conv1d",
+                "nn.conv2d",
+                "nn.conv2d_transpose",
+                "nn.conv3d",
+                "nn.conv3d_transpose",
+                "nn.dense",
+                "nn.max_pool2d",
+                "nn.avg_pool2d",
+                "nn.max_pool3d",
+                "nn.avg_pool3d",
+                "abs",
+                "clip",
+                "exp",
+                "log",
+                "sqrt",
+                "round",
+                "logsumexp",
+                "nn.relu",
+                "nn.leaky_relu",
+                "tanh",
+                "sigmoid",
+                "nn.softmax",
+                "add",
+                "multiply",
+                "divide",
+                "subtract",
+            ]
 
 def _register_external_op_helper(op_name, supported=True):
     """The helper function to indicate that a given operator can be supported
@@ -70,31 +98,8 @@ def _register_external_op_helper(op_name, supported=True):
     return _func_wrapper
 
 
-_register_external_op_helper("nn.batch_norm")
-_register_external_op_helper("nn.conv1d")
-_register_external_op_helper("nn.conv2d")
-_register_external_op_helper("nn.conv3d")
-_register_external_op_helper("nn.conv2d_transpose")
-_register_external_op_helper("nn.conv3d_transpose")
-_register_external_op_helper("nn.dense")
-_register_external_op_helper("nn.max_pool2d")
-_register_external_op_helper("nn.avg_pool2d")
-_register_external_op_helper("nn.max_pool3d")
-_register_external_op_helper("nn.avg_pool3d")
-_register_external_op_helper("abs")
-_register_external_op_helper("clip")
-_register_external_op_helper("exp")
-_register_external_op_helper("log")
-_register_external_op_helper("sqrt")
-_register_external_op_helper("round")
-_register_external_op_helper("logsumexp")
-_register_external_op_helper("nn.relu")
-_register_external_op_helper("nn.leaky_relu")
-_register_external_op_helper("tanh")
-_register_external_op_helper("sigmoid")
-_register_external_op_helper("nn.softmax")
-_register_external_op_helper("add")
-_register_external_op_helper("multiply")
+for op in dnnl_supported_ops:
+    _register_external_op_helper(op)
 
 
 def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
@@ -444,33 +449,7 @@ class IsComputeIntensiveGraph(ExprVisitor):
 
     def visit_call(self, call):
         compute_intensive_ops = set(
-            [
-                "nn.batch_norm",
-                "nn.conv1d",
-                "nn.conv2d",
-                "nn.conv2d_transpose",
-                "nn.conv3d",
-                "nn.conv3d_transpose",
-                "nn.dense",
-                "nn.max_pool2d",
-                "nn.avg_pool2d",
-                "nn.max_pool3d",
-                "nn.avg_pool3d",
-                "abs",
-                "clip",
-                "exp",
-                "log",
-                "sqrt",
-                "round",
-                "logsumexp",
-                "nn.relu",
-                "nn.leaky_relu",
-                "tanh",
-                "sigmoid",
-                "nn.softmax",
-                "add",
-                "multiply",
-            ]
+            dnnl_supported_ops
         )
         if isinstance(call.op, tvm.tir.op.Op):
             if str(call.op) in compute_intensive_ops:

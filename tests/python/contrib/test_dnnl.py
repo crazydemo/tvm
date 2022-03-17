@@ -142,7 +142,6 @@ def run_and_verify(mod, input, params, target, run_module):
             if use_dnnl:
                 processed_mod = partition_for_dnnl(mod, params, alter_layout)
                 check_dnnl_used(processed_mod)
-                print(processed_mod)
             else:
                 processed_mod = mod
             with tvm.transform.PassContext(opt_level=3):
@@ -633,7 +632,7 @@ def test_binary(run_module, d_type="float32"):
         f = tvm.IRModule.from_expr(out)
         return f, {"x": x_shape, "y": y_shape}, []
 
-    for op in [relay.add, relay.multiply]:
+    for op in [relay.subtract, relay.divide, relay.add, relay.multiply]:
         for y_is_const in [True, False]:
             run_and_verify_func(
                 get_graph(op, (1, 8, 3, 3), (1, 8, 3, 3), y_is_const, d_type),

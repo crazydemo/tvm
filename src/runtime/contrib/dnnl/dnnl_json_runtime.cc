@@ -120,6 +120,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"clip", dnnl::algorithm::eltwise_clip},
   };
 
+  std::map<std::string, dnnl::algorithm> binary_name2algo{
+      {"add", dnnl::algorithm::binary_add},
+      {"multiply", dnnl::algorithm::binary_mul},
+      {"mul", dnnl::algorithm::binary_mul},
+      {"divide", dnnl::algorithm::binary_div},
+      {"div", dnnl::algorithm::binary_div},
+      {"subtract", dnnl::algorithm::binary_sub},
+      {"sub", dnnl::algorithm::binary_sub},
+  };
+
   std::map<std::string, tag> layout_dict{
       {"", tag::any},
       {"NCW", tag::ncw},
@@ -291,10 +301,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Eltwise(nid);
         } else if ("nn.softmax" == op_name) {
           Softmax(nid);
-        } else if ("add" == op_name) {
-          Binary(nid, dnnl::algorithm::binary_add);
-        } else if ("multiply" == op_name) {
-          Binary(nid, dnnl::algorithm::binary_mul);
+        } else if (binary_name2algo.count(op_name)) {
+          Binary(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -837,8 +845,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_args_.push_back({{DNNL_ARG_SRC, data_memory}, {DNNL_ARG_DST, out_memory}});
   }
 
-  void Binary(const size_t& nid, dnnl::algorithm algo) {
+  void Binary(const size_t& nid) {
     auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+    auto algo = binary_name2algo[op_name];
 
     // Memory and compute description.
     std::vector<dnnl::memory::dims> data_dims;
