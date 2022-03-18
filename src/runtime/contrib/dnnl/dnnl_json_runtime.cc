@@ -785,16 +785,37 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::vector<dnnl::memory> data_memories;
 
     ICHECK_EQ(node.GetInputs().size(), 2U);
+    // get the longest axis.
+    dnnl::memory::dims longest_axis = {1};
+    for (size_t i = 0; i < node.GetInputs().size(); i++) {
+      auto entry = node.GetInputs()[i];
+      auto data_shape = nodes_[entry.id_].GetOpShape()[entry.index_];
+      if (!data_shape.size()) data_shape = {1};
+      if (data_shape.size() > longest_axis.size()) {
+        longest_axis = data_shape;
+      }
+    }
+    // ensure all the inputs have same axis.
     for (auto entry : node.GetInputs()) {
       auto data_shape = nodes_[entry.id_].GetOpShape()[entry.index_];
+      if (!data_shape.size()) data_shape = {1};
+      while (data_shape.size() < longest_axis.size()) {
+        data_shape.insert(data_shape.begin(), 1);
+      }
       dnnl::memory::desc data_md = GenDNNLMemDescByShape(data_shape, dt::f32);
 
       data_dims.push_back(data_shape);
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
     }
-    ICHECK(data_dims[0] == data_dims[1]);
-    auto out_md = data_mds[0];
+    // compute the output dims.
+    auto out_dims = data_dims[0];
+    for (size_t i = 1; i < data_dims.size(); i++) {
+      for ( size_t j = 0; j < data_dims[i].size(); j++) {
+        out_dims[j] = std::max(out_dims[j], data_dims[i][j]);
+      }
+    }
+    dnnl::memory::desc out_md = GenDNNLMemDescByShape(out_dims, dt::f32);
     JSONGraphNodeEntry out_entry(nid, 0);
     auto out_memory = BindDNNLMemory(out_entry, out_md);
 
@@ -827,6 +848,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   inline dnnl::memory::desc GenDNNLMemDescByShape(const dnnl::memory::dims& shape, dt dtype) {
     dnnl::memory::desc data_md;
     switch (shape.size()) {
+      case 1:
+        data_md = dnnl::memory::desc({shape, dtype, tag::a});
+        break;
       case 2:
         data_md = dnnl::memory::desc({shape, dtype, tag::ab});
         break;
