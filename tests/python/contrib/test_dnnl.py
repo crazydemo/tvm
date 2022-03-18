@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from types import TracebackType
 import pytest
 import itertools
 import numpy as np
@@ -613,6 +614,58 @@ def test_softmax(run_module, dtype="float32"):
     run_and_verify_func(get_graph((1, 1000), axis=-1), run_module=run_module)
     run_and_verify_func(get_graph((1, 3, 4), axis=-2), run_module=run_module)
     run_and_verify_func(get_graph((1, 3, 4), axis=1), run_module=run_module)
+
+
+def test_binary(run_module, d_type="float32"):
+    def get_graph(op, x_shape, y_shape, y_is_const=False, d_type="float16"):
+        x = relay.var("x", shape=(x_shape), dtype=d_type)
+        if y_is_const:
+            y = relay.const(np.ones(y_shape).astype(d_type))
+            out = op(x, y)
+            f = tvm.IRModule.from_expr(out)
+            return f, {"x": x_shape}, []
+        y = relay.var("y", shape=(y_shape), dtype=d_type)
+        out = op(x, y)
+        f = tvm.IRModule.from_expr(out)
+        return f, {"x": x_shape, "y": y_shape}, []
+
+    for op in [relay.add, relay.multiply]:
+        for y_is_const in [True, False]:
+            run_and_verify_func(
+                get_graph(op, (1, 8, 3, 3), (1, 8, 3, 3), y_is_const, d_type),
+                run_module=run_module,
+                dtype=d_type,
+            )
+            run_and_verify_func(
+                get_graph(op, (1, 8, 1, 3), (1, 8, 3, 1), y_is_const, d_type),
+                run_module=run_module,
+                dtype=d_type,
+            )
+            run_and_verify_func(
+                get_graph(op, (1, 10), (10,), y_is_const, d_type),
+                run_module=run_module,
+                dtype=d_type,
+            )
+            run_and_verify_func(
+                get_graph(op, (1, 1, 1, 10), (10,), y_is_const, d_type),
+                run_module=run_module,
+                dtype=d_type,
+            )
+            run_and_verify_func(
+                get_graph(op, (10,), (1, 1, 1, 10), y_is_const, d_type),
+                run_module=run_module,
+                dtype=d_type,
+            )
+            run_and_verify_func(
+                get_graph(op, (10,), (10,), y_is_const, d_type),
+                run_module=run_module,
+                dtype=d_type,
+            )
+            run_and_verify_func(
+                get_graph(op, (1, 1, 1), (3,), y_is_const, d_type),
+                run_module=run_module,
+                dtype=d_type,
+            )
 
 
 def test_conv1d(run_module, dtype="float32"):
