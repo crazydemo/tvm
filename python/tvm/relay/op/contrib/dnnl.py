@@ -91,6 +91,8 @@ _register_external_op_helper("sigmoid")
 _register_external_op_helper("nn.softmax")
 _register_external_op_helper("add")
 _register_external_op_helper("multiply")
+_register_external_op_helper("subtract")
+_register_external_op_helper("divide")
 
 
 def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):

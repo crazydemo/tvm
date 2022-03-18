@@ -629,7 +629,7 @@ def test_binary(run_module, d_type="float32"):
         f = tvm.IRModule.from_expr(out)
         return f, {"x": x_shape, "y": y_shape}, []
 
-    for op in [relay.add, relay.multiply]:
+    for op in [relay.add, relay.multiply, relay.subtract, relay.divide]:
         for y_is_const in [True, False]:
             run_and_verify_func(
                 get_graph(op, (1, 8, 3, 3), (1, 8, 3, 3), y_is_const, d_type),
