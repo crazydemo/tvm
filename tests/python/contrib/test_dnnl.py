@@ -617,7 +617,7 @@ def test_softmax(run_module, dtype="float32"):
 
 
 def test_binary(run_module, d_type="float32"):
-    def get_graph(op, x_shape, y_shape, y_is_const=False, d_type="float16"):
+    def get_graph(op, x_shape, y_shape, y_is_const=False, d_type="float32"):
         x = relay.var("x", shape=(x_shape), dtype=d_type)
         if y_is_const:
             y = relay.const(np.ones(y_shape).astype(d_type))
@@ -666,6 +666,28 @@ def test_binary(run_module, d_type="float32"):
                 run_module=run_module,
                 dtype=d_type,
             )
+
+
+def test_binary_pattern(run_module, dtype="float32"):
+    def get_graph(op_list, elt_post_op, x_shape, y_shape, d_type="float32"):
+        x = relay.var("x", shape=(x_shape), dtype=d_type)
+        param_dict = {"x": x_shape}
+        for i in range(len(op_list)):
+            y = relay.const(np.random.uniform(-1, 1, y_shape).astype(d_type))
+            x = op_list[i](x, y)
+        if elt_post_op:
+            out = elt_post_op(x)
+        f = tvm.IRModule.from_expr(out)
+        return f, param_dict, []
+    run_and_verify_func(get_graph([relay.add, relay.multiply], relay.nn.relu,
+                        (1, 8, 3, 3), (1, 8, 3, 3), dtype), run_module=run_module,
+                        dtype="float32")
+    run_and_verify_func(get_graph([relay.multiply, relay.add], relay.nn.relu,
+                        (1, 8, 3, 3), (1, 8, 3, 3), dtype), run_module=run_module,
+                        dtype="float32")
+    run_and_verify_func(get_graph([relay.multiply, relay.add], relay.nn.relu,
+                        (1, 3, 3, 8), (1, 1, 8), dtype), run_module=run_module,
+                        dtype="float32")
 
 
 def test_conv1d(run_module, dtype="float32"):

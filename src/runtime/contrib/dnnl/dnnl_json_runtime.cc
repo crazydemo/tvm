@@ -255,6 +255,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::regex dense_pat(".*dense.*");
     std::regex max_pool_pat(".*max_pool[1-3]d");
     std::regex avg_pool_pat(".*avg_pool[1-3]d");
+    std::regex binary_pat(".*(add|sub|mul|div).*");
 
     // Build subgraph engine.
     for (size_t nid = 0; nid < nodes_.size(); ++nid) {
@@ -279,7 +280,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Eltwise(nid);
         } else if ("nn.softmax" == op_name) {
           Softmax(nid);
-        } else if (binary_name2algo.count(op_name)) {
+        } else if (std::regex_match(op_name, binary_pat)) {
           Binary(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
@@ -787,14 +788,17 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Binary(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
-    auto algo = binary_name2algo[op_name];
+    std::string main_op = op_name.find("_") != std::string::npos
+                          ? op_name.substr(5, 3)
+                          : op_name;
+    auto algo = binary_name2algo[main_op];
 
     // Memory and compute description.
     std::vector<dnnl::memory::dims> data_dims;
     std::vector<dnnl::memory::desc> data_mds;
     std::vector<dnnl::memory> data_memories;
 
-    ICHECK_EQ(node.GetInputs().size(), 2U);
+    ICHECK_GE(node.GetInputs().size(), 2U);
     // get the longest axis.
     dnnl::memory::dims longest_axis = {1};
     for (size_t i = 0; i < node.GetInputs().size(); i++) {
@@ -813,7 +817,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         data_shape.insert(data_shape.begin(), 1);
       }
       dnnl::memory::desc data_md = GenDNNLMemDescByShape(data_shape, dt::f32);
-
       data_dims.push_back(data_shape);
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
@@ -825,18 +828,41 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         out_dims[j] = std::max(out_dims[j], data_dims[i][j]);
       }
     }
+
     dnnl::memory::desc out_md = GenDNNLMemDescByShape(out_dims, dt::f32);
     JSONGraphNodeEntry out_entry(nid, 0);
     auto out_memory = BindDNNLMemory(out_entry, out_md);
 
     auto binary_desc = dnnl::binary::desc(algo, data_mds[0], data_mds[1], out_md);
-    auto binary_prim_desc = dnnl::binary::primitive_desc(binary_desc, engine_);
+
+    // Append post-ops.
+    dnnl::post_ops ops;
+    if (op_name.find("dnnl.mul_add") != std::string::npos) {
+      ops.append_binary(dnnl::algorithm::binary_add, data_mds[2]);
+    } else if (op_name.find("dnnl.add_mul") != std::string::npos) {
+      ops.append_binary(dnnl::algorithm::binary_mul, data_mds[2]);
+    }
+    if (op_name.find("relu") != std::string::npos) {
+      ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.f, 0.f);
+    }
+    dnnl::primitive_attr attr;
+    attr.set_post_ops(ops);
+    
+    auto binary_prim_desc = dnnl::binary::primitive_desc(binary_desc, attr, engine_);
     auto binary = dnnl::binary(binary_prim_desc);
     net_.push_back(binary);
 
-    net_args_.push_back({{DNNL_ARG_SRC_0, data_memories[0]},
-                         {DNNL_ARG_SRC_1, data_memories[1]},
-                         {DNNL_ARG_DST, out_memory}});
+    // Primitive arguments.
+    std::unordered_map<int, dnnl::memory> binary_args;
+    binary_args.insert({DNNL_ARG_SRC_0, data_memories[0]});
+    binary_args.insert({DNNL_ARG_SRC_1, data_memories[1]});
+    binary_args.insert({DNNL_ARG_DST, out_memory});
+    if (op_name.find("_") != std::string::npos) {
+      binary_args.insert(
+            {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, data_memories[2]});
+    }
+
+    net_args_.push_back(binary_args);
   }
 
   // Read from DNNL memory (+offset) and write to the handle.

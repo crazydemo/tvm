@@ -445,25 +445,25 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       {"relu", "nn.relu"},
       {"tanh", "tanh"},
       {"sigmoid", "sigmoid"},
-      {"nn.deconv2d", "nn.conv2d_transpose"},
-      {"nn.deconv3d", "nn.conv3d_transpose"},
+      {"conv1d", "nn.conv1d"},
+      {"conv2d", "nn.conv2d"},
+      {"conv3d", "nn.conv3d"},
+      {"deconv2d", "nn.conv2d_transpose"},
+      {"deconv3d", "nn.conv3d_transpose"},
+      {"dense", "nn.dense"},
+      {"add", "add"},
+      {"mul", "multiply"},
   };
 
-  std::vector<std::string> ParsingOpList(const std::string& pattern_name,
+  std::vector<std::string> ParsingOpList(const std::string& pattern_name_,
                                          std::string interval = "_") {
+    std::string pattern_name = pattern_name_.substr(5);
     ICHECK_NE(pattern_name, "");
     std::vector<std::string> op_list;
     size_t pos = 0, start = 0;
     while ((pos = pattern_name.find(interval, start)) != std::string::npos) {
       std::string op_name = pattern_name.substr(start, pos - start);
-      if (op_name.find("dnnl") != std::string::npos) {
-        op_name.replace(op_name.find("dnnl"), 4, "nn");
-        if (op_name.find("deconv") != std::string::npos) {
-          op_name = op_map[op_name];
-        }
-      } else {
-        op_name = op_map[op_name];
-      }
+      op_name = op_map[op_name];
       if (pos > start) op_list.push_back(op_name);
       start = pos + interval.size();
     }
@@ -508,6 +508,10 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name.find("dnnl.dense") != std::string::npos) {
+        std::vector<std::string> op_list = ParsingOpList(name);
+        call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name.find("dnnl") != std::string::npos) {
         std::vector<std::string> op_list = ParsingOpList(name);
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
         ICHECK(call->op.as<OpNode>()) << "Not op node";

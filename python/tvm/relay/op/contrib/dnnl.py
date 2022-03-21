@@ -149,6 +149,26 @@ def make_dense_pattern(with_bias=True, with_eltwise=None):
     return dense_out
 
 
+def make_binary_pattern(op_list, with_eltwise="nn.relu"):
+    """Create patterns related to binary ops.
+
+    Parameters
+    ----------
+    with_eltwise : str
+        The attached elementwise post-op name.
+    Returns
+    -------
+    binary_out : CallPattern
+        Call node sequence.
+    """
+    binary_out = wildcard()
+    for op in op_list:
+        binary_out = is_op(op)(binary_out, wildcard())
+    if with_eltwise:
+        binary_out = is_op(with_eltwise)(binary_out)
+    return binary_out
+
+
 def make_dnnl_pattern(op_name, with_bias, with_eltwise):
     """Create dnnl patterns.
 
@@ -207,6 +227,8 @@ def pattern_table():
                 "nn.conv3d_transpose",
             ]:
                 dnnl_patterns.append(make_dnnl_pattern(conv_name, with_bias, elt))
+            dnnl_patterns.append(("dnnl.add_mul_relu", make_binary_pattern(["add", "multiply"], "nn.relu")))
+            dnnl_patterns.append(("dnnl.mul_add_relu", make_binary_pattern(["multiply", "add"], "nn.relu")))
             dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, elt))
     return dnnl_patterns
 
