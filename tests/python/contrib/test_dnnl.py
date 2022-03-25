@@ -1010,7 +1010,7 @@ def run_and_verify_model(
 
 @pytest.mark.skip(reason="takes a long time for this test ")
 def test_model(run_module, dtype="float32"):
-    run_and_verify_model("ResNet50_v2", run_module, dtype=dtype)
+    run_and_verify_model("ResNet50_v1b", run_module, dtype=dtype)
     run_and_verify_model("VGG11_bn", run_module, dtype=dtype)
     run_and_verify_model("InceptionV3", run_module, input_shape=(1, 3, 300, 300), dtype=dtype)
     run_and_verify_model("MobileNet1.0", run_module, dtype=dtype)
