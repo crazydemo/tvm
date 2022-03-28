@@ -189,12 +189,44 @@ void check_layout(bool var, bool ref) {
   }
 }
 
+dnnl::memory::dims TransDims2Plain(dnnl::memory::dims input_dims, std::string& layout) {
+    std::vector<char> axis = {
+        'N', 'C', 'O', 'I', 'D', 'H', 'W',
+    };
+    dnnl::memory::dims out_dims;
+    std::string::iterator t = layout.begin();
+    // Push the correct shapes of each axis into the output_dims
+    for (auto a : axis) {
+      dnnl::memory::dim shape = 1;
+      if (layout.find(a) != std::string::npos) {
+        shape *= input_dims[layout.find(a)];
+        char lower_a = std::tolower(a);
+        if (layout.find(lower_a) != std::string::npos) {
+          shape *= input_dims[layout.find(lower_a)];
+        }
+        out_dims.push_back(shape);
+      }
+    }
+    // Multiply O and I with G, respectively
+    if (layout.find("G") != std::string::npos) {
+      dnnl::memory::dim G = 1;
+      if (layout.find("g") != std::string::npos) {
+        G = input_dims[layout.find("g")] * input_dims[layout.find("G")];
+      } else {
+        G = input_dims[layout.find("G")];
+      }
+      out_dims[0] *= G;
+      out_dims[1] *= G;
+    }
+    return out_dims;
+  }
+
 std::string get_optimal_layout_for_conv(std::string data_layout, std::string kernel_layout,
                                         std::string weight_shape, std::string out_shape,
                                         std::string paddings, std::string strides,
                                         std::string dilates, std::string G) {
-  check_layout(std::regex_match(data_layout, std::regex("NC(D?)(H?)W")), true);
-  check_layout(std::regex_match(kernel_layout, std::regex("(G?)OI(D?)(H?)W")), true);
+  // check_layout(std::regex_match(data_layout, std::regex("NC(D?)(H?)W")), true);
+  // check_layout(std::regex_match(kernel_layout, std::regex("(G?)OI(D?)(H?)W")), true);
   check_shapes({weight_shape, out_shape, paddings, strides, dilates, G});
 
   dnnl::engine eng(dnnl::engine::kind::cpu, 0);
@@ -203,7 +235,7 @@ std::string get_optimal_layout_for_conv(std::string data_layout, std::string ker
   using dt = dnnl::memory::data_type;
 
   dnnl::memory::dim groups = std::stoi(G);
-  dnnl::memory::dims weight_dims_ = str2dims(weight_shape);
+  dnnl::memory::dims weight_dims_ = TransDims2Plain(str2dims(weight_shape), kernel_layout);
   dnnl::memory::dims weight_dims = weight_dims_;
 
   if (groups > 1) {
@@ -215,7 +247,7 @@ std::string get_optimal_layout_for_conv(std::string data_layout, std::string ker
     }
   }
 
-  dnnl::memory::dims out_dims = str2dims(out_shape);
+  dnnl::memory::dims out_dims = TransDims2Plain(str2dims(out_shape), data_layout);
   dnnl::memory::dims padding_dims = str2dims(paddings);
   dnnl::memory::dims padding_dims_l(padding_dims.begin(),
                                     padding_dims.begin() + padding_dims.size() / 2);
