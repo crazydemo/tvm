@@ -38,6 +38,8 @@ import numpy as np
 
 network_dic = {"googlenet-v1-tf": "/home2/zhangya9/open_model_zoo/public/googlenet-v1-tf/inception_v1.frozen.pb"}
 
+input_dic = {"googlenet-v1-tf": "input"}
+
 def transform_image(image):
     image = np.array(image) - np.array([123.0, 117.0, 104.0])
     image /= np.array([58.395, 57.12, 57.375])
@@ -124,12 +126,9 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     with tf_compat_v1.gfile.GFile(model_path, "rb") as f:
         graph_def = tf_compat_v1.GraphDef()
         graph_def.ParseFromString(f.read())
-        graph = tf.import_graph_def(graph_def, name="")
+        # graph = tf.import_graph_def(graph_def, name="")
         # Call the utility to import the graph definition into default graph.
         graph_def = tf_testing.ProcessGraphDefParam(graph_def)
-    # Add shapes to the graph.
-    # with tf_compat_v1.Session() as sess:
-    #     graph_def = tf_testing.AddShapesToGraphDef(sess, "InceptionV1/Logits/Predictions/Softmax")
 
     mod, params = relay.frontend.from_tensorflow(graph_def, layout=layout, shape=shape_dict)
 
