@@ -357,7 +357,15 @@ def legalize_group_conv(attrs, inputs, types):
         if "Transpose" not in type(attrs).__name__:
             return relay.nn.conv2d(data, weight, **attrs)
         return relay.nn.conv2d_transpose(data, weight, **attrs)
-    OC, IC, H, W = get_shape(weight)
+    weight_layout = attrs["kernel_layout"]
+    shape_ = get_shape(weight)
+    shape = []
+    for axis in ("O", "I", "H", "W"):
+        if axis.lower() in weight_layout:
+            raise ValueError("Unsupport layout format (%s) for group conv in byoc framework" % weight_layout)
+        idx = weight_layout.index(axis)
+        shape.append(shape_[idx])
+    OC, IC, H, W = shape
     new_attrs = dict(attrs)
     weight = relay.reshape(weight, (groups, OC // groups, IC, H, W))
     if "Transpose" not in type(attrs).__name__:
