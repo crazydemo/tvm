@@ -21,11 +21,32 @@ from tvm.relay import transform
 from tvm.relay.build_module import bind_params_by_name
 from tvm.relay.testing.temp_op_attr import TempOpAttr
 from tvm.relay.op.contrib import dnnl
+from onnxruntime.backend.backend import OnnxRuntimeBackend as backend
 
 import numpy as np
 
-network_root_path = "/home2/zhangya9/open_model_zoo/public"
-network_dic = { "googlenet-v1-tf": "googlenet-v1-tf/inception_v1.frozen.pb",
+network_root_path = "/home2/zhangya9/onnx_models"
+network_dic = { "MobileNet-v2-1.0": "MobileNet/torch_model/mobilenetv2_torch.onnx",
+                "resnet50-v1": "ResNet/v1/resnet50v1/resnet50-v1-7.onnx",
+                "resnet50-v2": "ResNet/v2/resnet50v2/resnet50-v2-7.onnx",
+                "squeezenet1.0": "SqueezeNet/squeezenet/model.onnx",
+                "squeezenet1.1": "SqueezeNet/squeezenet1.1/squeezenet1.1.onnx",
+                "vgg16": "VGG/vgg16/vgg16.onnx",
+                "vgg16-bn": "VGG/vgg16-bn/vgg16-bn.onnx",
+                "googlenet": "GoogleNet/bvlc_googlenet/model.onnx",
+                "rcnn": "RCNN_ILSVRC13/bvlc_reference_rcnn_ilsvrc13/model_N.onnx",
+                "densenet121": "DenseNet-121/densenet121/model.onnx",
+                "inception_v1": "Inception_V1/inception_v1/model.onnx",
+                "inception_v2": "Inception_V2/inception_v2/model.onnx",
+                "inception_v3": "Inception_V3/torch_model/inception_v3.onnx",
+                "shufflenet_v1": "ShuffleNet_V1/shufflenet/model.onnx",
+                "shufflenet_v2": "ShuffleNet_V2/torch_model/shufflenet_v2_x1_0.onnx",
+                "zfnet512": "ZFNet-512/zfnet512/model.onnx",
+                "efficientnet-lite4": "EfficientNet-Lite4/efficientnet-lite4/efficientnet-lite4.onnx",
+                "efficientnet-b0-pytorch": "efficientnet-b0-pytorch/efficientnet-b0.onnx",
+                "resnext50_32x4d": "ResNext/torch_model/resnext50_32x4d.onnx",
+                "wide_resnet50_2": "Wide_ResNet/torch_model/wide_resnet50_2.onnx",
+                "resnest50": "ResNeSt/torch_model/resnest50.onnx",
                 "googlenet-v2-tf": "googlenet-v2-tf/inception_v2.frozen.pb",
                 "googlenet-v3": "googlenet-v3/inception_v3_2016_08_28_frozen.pb",
                 "googlenet-v3-pytorch": "googlenet-v3-pytorch/googlenet-v3.onnx",
@@ -33,7 +54,6 @@ network_dic = { "googlenet-v1-tf": "googlenet-v1-tf/inception_v1.frozen.pb",
                 "inception-resnet-v2-tf": "inception-resnet-v2-tf/inception_resnet_v2.pb",
                 "anti-spoof-mn3": "anti-spoof-mn3/anti-spoof-mn3.onnx",
                 "densenet-121-caffe2": "densenet-121-caffe2/densenet-121-caffe2.onnx",
-                "efficientnet-b0-pytorch": "efficientnet-b0-pytorch/efficientnet-b0.onnx",
                 "efficientnet-b5-pytorch": "efficientnet-b5-pytorch/efficientnet-b5.onnx",
                 "efficientnet-b7-pytorch": "efficientnet-b7-pytorch/efficientnet-b7.onnx",
                 "hbonet-1.0": "hbonet-1.0/hbonet_1_0.onnx",
@@ -46,7 +66,6 @@ network_dic = { "googlenet-v1-tf": "googlenet-v1-tf/inception_v1.frozen.pb",
                 "mobilenet-v3-large-1.0-224-tf": "mobilenet-v3-large-1.0-224-tf/v3-large_224_1.0_float/v3-large_224_1.0_float.pb",
                 "octave-resnet-26-0.25": "octave-resnet-26-0.25/a02_resnet-26_alpha-0.250/checkpoint-0-symbol.json",
                 "open-closed-eye-0001": "open-closed-eye-0001/open-closed-eye.onnx",
-                "resnest50": "",
                 "resnet-50-tf": "resnet-50-tf/resnet_v1-50.pb",
                 "deeplabv3": "deeplabv3/deeplabv3_mnv2_pascal_train_aug/frozen_inference_graph.pb",
                 "fastseg-large": "fastseg-large/fastseg-large.onnx",
@@ -80,7 +99,26 @@ network_dic = { "googlenet-v1-tf": "googlenet-v1-tf/inception_v1.frozen.pb",
                 "vehicle-reid-0001": "vehicle-reid-0001/osnet_ain_x1_0_vehicle_reid.onnx",
               }
 
-input_dic = { "googlenet-v1-tf": "input",
+input_dic = { "MobileNet-v2-1.0": "input",
+              "resnet50-v1": "data",
+              "resnet50-v2": "data",
+              "squeezenet1.0": "data_0",
+              "squeezenet1.1": "data",
+              "vgg16": "data",
+              "vgg16-bn": "data",
+              "googlenet": "data_0",
+              "rcnn": "data_0",
+              "densenet121": "data_0",
+              "inception_v1": "data_0",
+              "inception_v2": "data_0",
+              "inception_v3": "input",
+              "shufflenet_v1": "gpu_0/data_0",
+              "shufflenet_v2": "input",
+              "zfnet512": "gpu_0/data_0",
+              "efficientnet-lite4": "images:0",
+              "resnext50_32x4d": "input",
+              "wide_resnet50_2": "input",
+              "resnest50": "input",
               "googlenet-v2-tf": "input",
               "googlenet-v3": "input",
               "googlenet-v3-pytorch": "data",
@@ -101,7 +139,6 @@ input_dic = { "googlenet-v1-tf": "input",
               "mobilenet-v3-small-1.0-224-tf": "input_1",
               "mobilenet-v3-large-1.0-224-tf": "input_1",
               "open-closed-eye-0001": "input.1",
-              "resnest50": "input",
               "resnet-50-tf": "map/TensorArrayStack/TensorArrayGatherV3",
               "deeplabv3": "ImageTensor",
               "fastseg-large": "input0",
@@ -135,7 +172,25 @@ input_dic = { "googlenet-v1-tf": "input",
               "vehicle-reid-0001": "data",
             }
 
-shape_dic = { "googlenet-v1-tf": [1, 224, 224, 3],
+shape_dic = { "MobileNet-v2-1.0": [1, 3, 224, 224],
+              "resnet50-v1": [1, 3, 224, 224],
+              "resnet50-v2": [1, 3, 224, 224],
+              "squeezenet1.0": [1, 3, 224, 224],
+              "squeezenet1.1": [1, 3, 224, 224],
+              "vgg16": [1, 3, 224, 224],
+              "vgg16-bn": [1, 3, 224, 224],
+              "googlenet": [1, 3, 224, 224],
+              "rcnn": [1, 3, 224, 224],
+              "densenet121": [1, 3, 224, 224],
+              "inception_v1": [1, 3, 224, 224],
+              "inception_v2": [1, 3, 224, 224],
+              "inception_v3": [1, 3, 224, 224],
+              "shufflenet_v1": [1, 3, 224, 224],
+              "shufflenet_v2": [1, 3, 224, 224],
+              "zfnet512": [1, 3, 224, 224],
+              "efficientnet-lite4": [1, 224, 224, 3],
+              "resnext50_32x4d": [1, 3, 224, 224],
+              "wide_resnet50_2": [1, 3, 224, 224],
               "googlenet-v2-tf": [1, 224, 224, 3],
               "googlenet-v3": [1, 299, 299, 3],
               "googlenet-v3-pytorch": [1, 3, 299, 299],
@@ -273,7 +328,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
         with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", dnnl.legalize_group_conv):
             seq = tvm.transform.Sequential(
                 [
-                    tvm.transform.PrintIR(),
+                    # tvm.transform.PrintIR(),
                     transform.CanonicalizeOps(),
                     transform.InferType(),
                     transform.SimplifyInference(),
@@ -287,7 +342,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                     # alter group conv /conv_transpose layout to `GOIHW` / `GIOHW`
                     transform.Legalize(),
                     transform.FoldConstant(),
-                    tvm.transform.PrintIR(),
+                    # tvm.transform.PrintIR(),
                 ]
             )
             with tvm.transform.PassContext(opt_level=3):
@@ -306,7 +361,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                                 [
                                     transform.AlterOpLayout(),
                                     transform.FoldConstant(),
-                                    tvm.transform.PrintIR(),
+                                    # tvm.transform.PrintIR(),
                                 ]
                             )
                             with tvm.transform.PassContext(opt_level=3):
@@ -327,14 +382,13 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
 
 def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100, batches=400, dtype="float32", target="llvm"):
     ctx = tvm.cpu()
-    layout = layout_dic[network]
     input_name = input_dic[network]
     input_shape = shape_dic[network]
     input_shape[0] = batch_size
     # print(input_shape)
     shape_dict = {input_name: input_shape}
     model_path = os.path.join(network_root_path, network_dic[network])
-    sample = np.random.randint(0, 1, input_shape)
+    sample = np.random.randint(0, 1, input_shape).astype(dtype)
     if network_dic[network] == "":
         print("=============converting torch model===============")
         import torch
@@ -361,6 +415,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         except ImportError:
             tf_compat_v1 = tf
         import tvm.relay.testing.tf as tf_testing
+        layout = layout_dic[network]
         with tf_compat_v1.gfile.GFile(model_path, "rb") as f:
             graph_def = tf_compat_v1.GraphDef()
             graph_def.ParseFromString(f.read())
@@ -370,7 +425,9 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         print("=============converting ONNX model===============")
         import onnx
         onnx_model = onnx.load(model_path)
+        # print(onnx_model.graph.input)
         mod, params = relay.frontend.from_onnx(onnx_model, shape_dict)
+        # print(mod)
     elif model_path.split(".")[-1] == "caffemodel":
         print("=============converting caffe model===============")
         import caffe.proto.caffe_pb2 as caffe_pb2
@@ -404,6 +461,13 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     
     rt_mod.set_input(input_name, tvm.nd.array(sample.astype(dtype)))
     rt_mod.set_input(**params)
+
+    print("=============Checking accuracy===============")
+    if check_acc:
+        onnx_output = list(backend.run_model(onnx_model, sample))
+        rt_mod.run()
+        tvm_output = rt_mod.get_output(0)
+        np.testing.assert_almost_equal(onnx_output, [tvm_output.asnumpy()], 5)
     # out = rt_mod.run()
     print("=============Running===============")
     for i in range(batches+warmup):
@@ -420,10 +484,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="anti-spoof-mn3",
+        default="shufflenet_v2",
         help="The name of the neural network.",
     )
-    parser.add_argument("--batch_size", type=int, default=128, help="The batch size")
+    parser.add_argument("--batch_size", type=int, default=16, help="The batch size")
     parser.add_argument(
         "--target",
         type=str,
@@ -432,8 +496,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dtype", type=str, default="float32", help="The data type.")
     
-    parser.add_argument("--warmup", type=int, default=0)
-    parser.add_argument("--batches", type=int, default=1)
+    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--batches", type=int, default=100)
     parser.add_argument("--profiling", type=bool, default=False)
     parser.add_argument("--check_acc", type=bool, default=False)
     args = parser.parse_args()

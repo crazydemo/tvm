@@ -4,8 +4,8 @@ record_root="/home2/zhangya9/tvm/tutorials/bench_openvino"
 target='llvm -mcpu=cascadelake -model=platinum-8280'
 dtype='float32'
 
-network_list=('anti-spoof-mn3')   # 'anti-spoof-mn3')
-cores_list=('28') #('28' '28' '4')    # multi-instances should be the last one
+network_list=('resnest50')   # 'anti-spoof-mn3')
+cores_list=('4') #('28' '28' '4')    # multi-instances should be the last one
 batch_list=('1') #('1' '128' '1')
 
 repeat=100
