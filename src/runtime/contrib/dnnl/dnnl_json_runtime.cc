@@ -128,7 +128,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       // Blocking layout.
       {"NCW8c", tag::nCw8c},
       {"NCW16c", tag::nCw16c},
-      {"OIW16i16o", tag::OIw8i8o},
+      {"OIW8i8o", tag::OIw8i8o},
       {"OIW16i16o", tag::OIw16i16o},
       {"OWI8o", tag::Owi8o},
       {"OWI16o", tag::Owi16o},
@@ -162,15 +162,18 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"ODHWI64o", tag::Odhwi64o},
   };
 
-  bool ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
+  void ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
     // Define RegExp.
-    std::regex bias_add_pat(".*_bias.*");
+    std::regex sum_pat(".*_sum.*");
     std::regex relu_pat(".*_relu.*");
     std::regex tanh_pat(".*_tanh.*");
     std::regex sigmoid_pat(".*_sigmoid.*");
 
     // Parsing post-ops.
     dnnl::post_ops ops;
+    if (std::regex_match(op_name, sum_pat)) {
+      ops.append_sum(1.f);
+    }
     if (std::regex_match(op_name, relu_pat)) {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 0.f);
     }
@@ -181,9 +184,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_logistic, 0.f, 0.f);
     }
     attr.set_post_ops(ops);
-
-    // Parsing bias_add.
-    return std::regex_match(op_name, bias_add_pat) ? true : false;
   }
 
   dnnl::memory::dims TransDims2Plain(dnnl::memory::dims input_dims, std::string layout) {
@@ -314,7 +314,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
     dnnl::primitive_attr attr;
-    bool has_bias = ParsingOpName(op_name, attr);
+    ParsingOpName(op_name, attr);
+    bool has_bias = false, has_sum = false;
+    auto bias_entry = node.GetInputs()[0], sum_entry = node.GetInputs()[0];
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
@@ -379,6 +381,31 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       }
     }
 
+    // Check if has bias or sum post_op.
+    if (node.GetInputs().size() > 2) {
+      dnnl::memory::dim dst_size = 1;
+      for (size_t i = 0; i<dst_dims.size(); i++) {
+        if (dst_dims[i] == 0) break;
+        dst_size *= dst_dims[i];
+      }
+      for (size_t i = 2; i < node.GetInputs().size(); i++) {
+        auto add_entry = node.GetInputs()[i];
+        dnnl::memory::dims add_dims = nodes_[add_entry.id_].GetOpShape()[add_entry.index_];
+        dnnl::memory::dim add_size = 1;
+        for (size_t i = 0; i<add_dims.size(); i++) {
+          if (add_dims[i] == 0) break;
+          add_size *= add_dims[i];
+        }
+        if (add_size == dst_size) {
+          sum_entry = add_entry;
+          has_sum = true;
+        } else {
+          bias_entry = add_entry;
+          has_bias = true;
+        }
+      }
+    }
+
     // Memory descriptions.
     auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, layout_dict[data_layout]);
     auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, layout_dict[kernel_layout]);
@@ -410,12 +437,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_weights_memory = BindDNNLMemory(weight_entry, conv_prim_desc.weights_desc());
 
     // Output memory.
-    auto conv_dst_memory = BindDNNLMemory(out_entry, conv_prim_desc.dst_desc());
+    // auto conv_dst_memory = BindDNNLMemory(out_entry, conv_prim_desc.dst_desc());
+    auto conv_dst_memory = dnnl::memory(conv_prim_desc.dst_desc(), engine_);
+    if (has_sum) {
+      conv_dst_memory = BindDNNLMemory(sum_entry, conv_prim_desc.dst_desc());
+    }
+    BindDNNLMemory(out_entry, conv_dst_memory);
 
     // Bias memory.
     auto conv_bias_memory = dnnl::memory({bias_dims, dt::f32, tag::x}, engine_);
     if (has_bias) {
-      auto bias_entry = node.GetInputs()[2];
       BindDNNLMemory(bias_entry, conv_bias_memory);
 
       // Bind memory buffers.
@@ -435,7 +466,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
     dnnl::primitive_attr attr;
-    bool has_bias = ParsingOpName(op_name, attr);
+    ParsingOpName(op_name, attr);
+    bool has_bias = op_name.find("_bias") != std::string::npos;
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
@@ -563,7 +595,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
     dnnl::primitive_attr attr;
-    bool has_bias = ParsingOpName(op_name, attr);
+    ParsingOpName(op_name, attr);
+    bool has_bias = op_name.find("_bias") != std::string::npos;
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];

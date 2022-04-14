@@ -121,7 +121,7 @@ def assert_result_dict_holds(result_dict):
         res1 = vmobj_to_list(result_dict[k1])
         res2 = vmobj_to_list(result_dict[k2])
         for r1, r2 in zip(res1, res2):
-            tvm.testing.assert_allclose(r1, r2, rtol=1e-3, atol=1e-3)
+            tvm.testing.assert_allclose(r1, r2, rtol=1e-5, atol=1e-5)
 
 
 def run_and_verify(mod, input, params, target, run_module, subgraph_num=None):
@@ -405,10 +405,27 @@ def get_conv2d_bias_bn_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype
     return relay.nn.relu(conv2d_bias_bn), dic, param_lst
 
 
-def get_conv2d_bias_sum_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype="float32"):
+def get_conv2d_bn_sum_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype="float32"):
     conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, dtype=dtype)
-    sum_data = relay.const(np.random.randint(x_shape).astype(dtype))
-    conv2d_bias_sum = relay.add(sum_data, conv2d_bias)
+    beta = relay.const(np.zeros(k_shape[0]).astype(dtype))
+    gamma = relay.const(np.ones(k_shape[0]).astype(dtype))
+    moving_mean = relay.const(np.zeros(k_shape[0]).astype(dtype))
+    moving_var = relay.const(np.ones(k_shape[0]).astype(dtype))
+    conv2d_bias_bn, _, _ = relay.nn.batch_norm(
+        conv2d_bias,
+        gamma=gamma,
+        beta=beta,
+        moving_mean=moving_mean,
+        moving_var=moving_var,
+        axis=1,
+        center=True,
+        scale=True,
+        epsilon=1e-5,
+    )
+    sum_data = relay.var("data1", shape=(1, 16, 6, 6), dtype=dtype)
+    conv2d_bias_sum = relay.add(conv2d_bias_bn, sum_data)
+    dic["data1"] = (1, 16, 6, 6)
+    param_lst += ["data1"]
     return relay.nn.relu(conv2d_bias_sum), dic, param_lst
 
 
@@ -635,9 +652,9 @@ def test_conv1d(run_module, dtype="float32"):
 
     x_shape = (1, 32, 224)
     k_shape = (16, 32, 3)
-    conv1d_bias, dic, param_lst = get_conv1d(x_shape, k_shape, dtype=dtype)
-    conv1d_bias = tvm.IRModule.from_expr(conv1d_bias)
-    config = conv1d_bias, dic, param_lst
+    conv1d, dic, param_lst = get_conv1d(x_shape, k_shape, dtype=dtype)
+    conv1d = tvm.IRModule.from_expr(conv1d)
+    config = conv1d, dic, param_lst
     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
@@ -713,9 +730,9 @@ def test_conv2d_pattern(run_module, dtype="float32"):
     config = conv2d_bias_bn_relu, dic, param_lst
     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
-    conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
-    config = conv2d_bias_bn_relu, dic, param_lst
+    conv2d_bn_sum_relu, dic, param_lst = get_conv2d_bn_sum_relu(x_shape, k_shape, dtype=dtype)
+    conv2d_bn_sum_relu = tvm.IRModule.from_expr(conv2d_bn_sum_relu)
+    config = conv2d_bn_sum_relu, dic, param_lst
     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
