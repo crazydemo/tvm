@@ -63,30 +63,44 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   }
 
   void Run() override {
+    // // Fill in the input buffers.
+    // for (size_t i = 0; i < input_nodes_.size(); ++i) {
+    //   auto eid = EntryID(input_nodes_[i], 0);
+    //   // TODO(@comaniac): Support other data lengths.
+    //   size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
+    //   size_t buffer_size = GetDataSize(*data_entry_[eid]);
+    //   write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+    //                        offset_in_bytes);
+    // }
+
+    // // Invoke the engine through intepreting the stream.
+    // for (size_t i = 0; i < net_.size(); ++i) {
+    //   net_.at(i).execute(stream_, net_args_.at(i));
+    // }
+    // stream_.wait();
+
+    // // Read output buffers.
+    // for (size_t i = 0; i < outputs_.size(); ++i) {
+    //   auto eid = EntryID(outputs_[i]);
+    //   size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
+    //   size_t buffer_size = GetDataSize(*data_entry_[eid]);
+    //   read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+    //                         offset_in_bytes);
+    // }
     // Fill in the input buffers.
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);
-      // TODO(@comaniac): Support other data lengths.
-      size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
-      size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-                           offset_in_bytes);
+      entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
     }
-
+    for (size_t i = 0; i < outputs_.size(); ++i) {
+      auto eid = EntryID(outputs_[i]);
+      entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
+    }
     // Invoke the engine through intepreting the stream.
     for (size_t i = 0; i < net_.size(); ++i) {
       net_.at(i).execute(stream_, net_args_.at(i));
     }
     stream_.wait();
-
-    // Read output buffers.
-    for (size_t i = 0; i < outputs_.size(); ++i) {
-      auto eid = EntryID(outputs_[i]);
-      size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
-      size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-                            offset_in_bytes);
-    }
   }
 
  private:
