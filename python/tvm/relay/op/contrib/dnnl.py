@@ -205,7 +205,7 @@ def pattern_table():
     dnnl_patterns : List[dnnl_pattern]
         Created patterns.
     """
-    elt_list = ["nn.relu", "tanh", "sigmoid", None]
+    elt_list = ["nn.relu", "tanh", "sigmoid", "clip", None]
     dnnl_patterns = [
         ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
         ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
