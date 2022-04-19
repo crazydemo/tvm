@@ -95,13 +95,17 @@ _register_external_op_helper("add")
 _register_external_op_helper("multiply")
 
 
-def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
+def make_conv_pattern(conv_name, with_bias=True, with_sum=False, with_eltwise=None):
     """Create patterns related to conv and conv_transpose.
 
     Parameters
     ----------
+    conv_name : string
+        nn.conv1d-3d / nn.conv2d_transpose / nn.conv3d_transpose.
     with_bias : bool
         Whether attach `bias_add` to `conv / conv_transpose`.
+    with_sum : bool
+        Whether attach `elementwise add` to `conv / conv_transpose`.
     with_eltwise : str
         The attached elementwise post-op name.
     Returns
@@ -115,6 +119,8 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     conv = is_op(conv_name)(data, weight)
     if with_bias:
         conv_out = is_op("add")(conv, bias)
+        if with_sum:
+            conv_out = is_op("add")(conv_out, wildcard())
     else:
         conv_out = conv
     if with_eltwise:
@@ -122,25 +128,15 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     return conv_out
 
 
-def make_conv_add_sum_relu_pattern(conv_type):
-    data1 = wildcard()
-    weight = wildcard()
-    bias = wildcard()
-    data2 = wildcard()
-    out = is_op(conv_type)(data1, weight)
-    out = is_op("add")(out, bias)
-    out = is_op("add")(out, data2)
-    out = is_op("nn.relu")(out)
-    return out
-
-
-def make_dense_pattern(with_bias=True, with_eltwise=None):
+def make_dense_pattern(with_bias=True, with_sum=False, with_eltwise=None):
     """Create patterns related to nn.dense.
 
     Parameters
     ----------
     with_bias : bool
         Whether attach `bias_add` to `nn.dense`.
+    with_sum : bool
+        Whether attach `elementwise add` to `conv / conv_transpose`.
     with_eltwise : str
         The attached elementwise post-op name.
     Returns
@@ -154,6 +150,8 @@ def make_dense_pattern(with_bias=True, with_eltwise=None):
     dense = is_op("nn.dense")(data, weight)
     if with_bias:
         dense_out = is_op("add")(dense, bias)
+        if with_sum:
+            dense_out = is_op("add")(dense_out, wildcard())
     else:
         dense_out = dense
     if with_eltwise:
@@ -161,7 +159,7 @@ def make_dense_pattern(with_bias=True, with_eltwise=None):
     return dense_out
 
 
-def make_dnnl_pattern(op_name, with_bias, with_eltwise):
+def make_dnnl_pattern(op_name, with_bias, with_sum, with_eltwise):
     """Create dnnl patterns.
 
     Parameters
@@ -170,6 +168,8 @@ def make_dnnl_pattern(op_name, with_bias, with_eltwise):
         The first call node's op name.
     with_bias : bool
         Whether attach `bias_add` to `nn.dense`.
+    with_sum : bool
+        Whether attach `elementwise add` to `conv / conv_transpose.
     with_eltwise : str
         The attached elementwise post-op name.
     Returns
@@ -181,11 +181,12 @@ def make_dnnl_pattern(op_name, with_bias, with_eltwise):
     if "_transpose" in op_name:
         pat_name = "dnnl.deconv" + op_name.split("_")[0][-2::]
     pat_name += "_bias" if with_bias else ""
+    pat_name += "_sum" if with_sum else ""
     pat_name += ("_" + with_eltwise.split(".")[-1]) if with_eltwise else ""
     if "conv" in op_name:
-        dnnl_pattern = (pat_name, make_conv_pattern(op_name, with_bias, with_eltwise))
+        dnnl_pattern = (pat_name, make_conv_pattern(op_name, with_bias, with_sum, with_eltwise))
     elif op_name == "nn.dense":
-        dnnl_pattern = (pat_name, make_dense_pattern(with_bias, with_eltwise))
+        dnnl_pattern = (pat_name, make_dense_pattern(with_bias, with_sum, with_eltwise))
     else:
         logger.warning(
             "Currently, only conv1d, conv2d, conv2d_transpose, conv3d_transpose and "
@@ -206,11 +207,8 @@ def pattern_table():
         Created patterns.
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", None]
-    dnnl_patterns = [
-        ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
-        ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
-    ]
-    for with_bias in [True, False]:
+    dnnl_patterns = []
+    for with_bias, with_sum in [(True, True), (True, False), (False, False)]:
         for elt in elt_list:
             if not with_bias and not elt:
                 return dnnl_patterns
@@ -221,8 +219,8 @@ def pattern_table():
                 "nn.conv2d_transpose",
                 "nn.conv3d_transpose",
             ]:
-                dnnl_patterns.append(make_dnnl_pattern(conv_name, with_bias, elt))
-            dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, elt))
+                dnnl_patterns.append(make_dnnl_pattern(conv_name, with_bias, with_sum, elt))
+            dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, with_sum, elt))
     return dnnl_patterns
 
 

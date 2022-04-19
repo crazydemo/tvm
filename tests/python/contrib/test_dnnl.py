@@ -385,7 +385,7 @@ def get_conv2d_transpose_bias(
         return out, dic, param_lst
 
 
-def get_conv2d_bias_bn_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype="float32"):
+def get_conv2d_bias_bn_elt(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), activation=None, dtype="float32"):
     conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, dtype=dtype)
     beta = relay.const(np.zeros(k_shape[0]).astype(dtype))
     gamma = relay.const(np.ones(k_shape[0]).astype(dtype))
@@ -402,10 +402,17 @@ def get_conv2d_bias_bn_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype
         scale=True,
         epsilon=1e-5,
     )
-    return relay.nn.relu(conv2d_bias_bn), dic, param_lst
+    if activation == "relu":
+        return relay.nn.relu(conv2d_bias_bn), dic, param_lst
+    elif activation == "tanh":
+        return relay.tanh(conv2d_bias_bn), dic, param_lst
+    elif activation == "sigmoid":
+        return relay.sigmoid(conv2d_bias_bn), dic, param_lst
+    else:
+        return conv2d_bias_bn, dic, param_lst
 
 
-def get_conv2d_bn_sum_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype="float32"):
+def get_conv2d_bn_sum_elt(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), activation=None, dtype="float32"):
     conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, dtype=dtype)
     beta = relay.const(np.zeros(k_shape[0]).astype(dtype))
     gamma = relay.const(np.ones(k_shape[0]).astype(dtype))
@@ -426,7 +433,14 @@ def get_conv2d_bn_sum_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype=
     conv2d_bias_sum = relay.add(conv2d_bias_bn, sum_data)
     dic["data1"] = (1, 16, 6, 6)
     param_lst += ["data1"]
-    return relay.nn.relu(conv2d_bias_sum), dic, param_lst
+    if activation == "relu":
+        return relay.nn.relu(conv2d_bias_sum), dic, param_lst
+    elif activation == "tanh":
+        return relay.tanh(conv2d_bias_sum), dic, param_lst
+    elif activation == "sigmoid":
+        return relay.sigmoid(conv2d_bias_sum), dic, param_lst
+    else:
+        return conv2d_bias_sum, dic, param_lst
 
 
 def get_conv3d(
@@ -725,15 +739,15 @@ def test_conv2d_pattern(run_module, dtype="float32"):
         config = conv2d_bias, dic, param_lst
         run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
-    conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
-    config = conv2d_bias_bn_relu, dic, param_lst
-    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+        conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_elt(x_shape, k_shape, activation=a, dtype=dtype)
+        conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
+        config = conv2d_bias_bn_relu, dic, param_lst
+        run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    conv2d_bn_sum_relu, dic, param_lst = get_conv2d_bn_sum_relu(x_shape, k_shape, dtype=dtype)
-    conv2d_bn_sum_relu = tvm.IRModule.from_expr(conv2d_bn_sum_relu)
-    config = conv2d_bn_sum_relu, dic, param_lst
-    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+        conv2d_bn_sum_relu, dic, param_lst = get_conv2d_bn_sum_elt(x_shape, k_shape, activation=a, dtype=dtype)
+        conv2d_bn_sum_relu = tvm.IRModule.from_expr(conv2d_bn_sum_relu)
+        config = conv2d_bn_sum_relu, dic, param_lst
+        run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
 def test_conv2d_transpose(run_module, dtype="float32"):

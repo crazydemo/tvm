@@ -162,7 +162,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"ODHWI64o", tag::Odhwi64o},
   };
 
-  void ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
+  void ParsingOpName(const std::string& op_name, dnnl::primitive_attr attr) {
     // Define RegExp.
     std::regex sum_pat(".*_sum.*");
     std::regex relu_pat(".*_relu.*");
@@ -500,7 +500,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     if (layout_dict.find(kernel_layout) == layout_dict.end()) {
       layout_dict.insert({kernel_layout, tag::any});
-      LOG(WARNING) << "Unregistered kernel layout for deconv: " << data_layout
+      LOG(WARNING) << "Unregistered kernel layout for deconv: " << kernel_layout
                    << ", transfer to tag::any";
     }
 
