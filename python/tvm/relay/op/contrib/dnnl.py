@@ -206,7 +206,7 @@ def pattern_table():
     dnnl_patterns : List[dnnl_pattern]
         Created patterns.
     """
-    elt_list = ["nn.relu", "tanh", "sigmoid", None]
+    elt_list = ["nn.relu", "tanh", "sigmoid", "clip", None]
     dnnl_patterns = []
     for with_bias, with_sum in [(True, True), (True, False), (False, False)]:
         for elt in elt_list:

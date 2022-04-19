@@ -212,6 +212,8 @@ def get_conv1d(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -229,6 +231,8 @@ def get_conv1d_bias(x_shape=(1, 3, 224), k_shape=(10, 3, 3), activation=None, dt
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -284,6 +288,8 @@ def get_conv2d(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -317,6 +323,8 @@ def get_conv2d_transpose(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -362,6 +370,8 @@ def get_conv2d_bias(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -381,6 +391,8 @@ def get_conv2d_transpose_bias(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -408,6 +420,8 @@ def get_conv2d_bias_bn_elt(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), activa
         return relay.tanh(conv2d_bias_bn), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(conv2d_bias_bn), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(conv2d_bias_bn, 0.0, 6.0), dic, param_lst
     else:
         return conv2d_bias_bn, dic, param_lst
 
@@ -439,6 +453,8 @@ def get_conv2d_bn_sum_elt(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), activat
         return relay.tanh(conv2d_bias_sum), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(conv2d_bias_sum), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(conv2d_bias_sum, 0.0, 6.0), dic, param_lst
     else:
         return conv2d_bias_sum, dic, param_lst
 
@@ -474,6 +490,8 @@ def get_conv3d(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -513,6 +531,8 @@ def get_conv3d_transpose(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -532,6 +552,8 @@ def get_conv3d_bias(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -551,6 +573,8 @@ def get_conv3d_transpose_bias(
         return relay.tanh(out), dic, param_lst
     elif activation == "sigmoid":
         return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
     else:
         return out, dic, param_lst
 
@@ -675,7 +699,7 @@ def test_conv1d(run_module, dtype="float32"):
 def test_conv1d_pattern(run_module, dtype="float32"):
     x_shape = (1, 3, 224)
     k_shape = (16, 3, 3)
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = ["clip"]#None, "relu", "tanh", "sigmoid", 
     for a in activation_lst:
         conv1d, dic, param_lst = get_conv1d(x_shape, k_shape, activation=a, dtype=dtype)
         conv1d = tvm.IRModule.from_expr(conv1d)
@@ -727,7 +751,7 @@ def test_conv2d_weights_const(run_module, dtype="float32"):
 def test_conv2d_pattern(run_module, dtype="float32"):
     x_shape = (1, 32, 8, 8)
     k_shape = (16, 32, 3, 3)
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
         conv2d = tvm.IRModule.from_expr(conv2d)
@@ -739,14 +763,14 @@ def test_conv2d_pattern(run_module, dtype="float32"):
         config = conv2d_bias, dic, param_lst
         run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-        conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_elt(x_shape, k_shape, activation=a, dtype=dtype)
-        conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
-        config = conv2d_bias_bn_relu, dic, param_lst
+        conv2d_bias_bn_elt, dic, param_lst = get_conv2d_bias_bn_elt(x_shape, k_shape, activation=a, dtype=dtype)
+        conv2d_bias_bn_elt = tvm.IRModule.from_expr(conv2d_bias_bn_elt)
+        config = conv2d_bias_bn_elt, dic, param_lst
         run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-        conv2d_bn_sum_relu, dic, param_lst = get_conv2d_bn_sum_elt(x_shape, k_shape, activation=a, dtype=dtype)
-        conv2d_bn_sum_relu = tvm.IRModule.from_expr(conv2d_bn_sum_relu)
-        config = conv2d_bn_sum_relu, dic, param_lst
+        conv2d_bn_sum_elt, dic, param_lst = get_conv2d_bn_sum_elt(x_shape, k_shape, activation=a, dtype=dtype)
+        conv2d_bn_sum_elt = tvm.IRModule.from_expr(conv2d_bn_sum_elt)
+        config = conv2d_bn_sum_elt, dic, param_lst
         run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
@@ -769,7 +793,7 @@ def test_conv2d_transpose(run_module, dtype="float32"):
 
 
 def test_conv2d_transpose_pattern(run_module, dtype="float32"):
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv2d, dic, param_lst = get_conv2d_transpose(activation=a, dtype=dtype)
         conv2d = tvm.IRModule.from_expr(conv2d)
@@ -802,7 +826,7 @@ def test_conv3d(run_module, dtype="float32"):
 
 
 def test_conv3d_pattern(run_module, dtype="float32"):
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv3d, dic, param_lst = get_conv3d(activation=a, dtype=dtype)
         conv3d = tvm.IRModule.from_expr(conv3d)
@@ -835,7 +859,7 @@ def test_conv3d_transpose(run_module, dtype="float32"):
 
 
 def test_conv3d_transpose_pattern(run_module, dtype="float32"):
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv3d, dic, param_lst = get_conv3d_transpose(activation=a, dtype=dtype)
         conv3d = tvm.IRModule.from_expr(conv3d)
