@@ -135,6 +135,30 @@ def make_conv_add_sum_relu_pattern(conv_type):
     return out
 
 
+def make_conv_add_swish_pattern(conv_name, with_bias=True):
+    """Create patterns related to conv and conv_transpose with swish.
+
+    Parameters
+    ----------
+    conv_name : string
+        nn.conv1d-3d / nn.conv2d_transpose / nn.conv3d_transpose.
+    with_bias : bool
+        Whether attach `bias_add` to `conv / conv_transpose`.
+    Returns
+    -------
+    conv_out : CallPattern
+        Call node sequence.
+    """
+    data = wildcard()
+    weight = wildcard()
+    conv_out = is_op(conv_name)(data, weight)
+    if with_bias:
+        conv_out = is_op("add")(conv_out, wildcard())
+    sig_out = is_op("sigmoid")(conv_out)
+    out = is_op("multiply")(conv_out, sig_out)
+    return out
+
+
 def make_dense_pattern(with_bias=True, with_eltwise=None):
     """Create patterns related to nn.dense.
 
@@ -210,6 +234,8 @@ def pattern_table():
     dnnl_patterns = [
         ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
         ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
+        ("dnnl.conv2d_bias_sigmoid_mul", make_conv_add_swish_pattern("nn.conv2d", True)),
+        ("dnnl.conv2d_sigmoid_mul", make_conv_add_swish_pattern("nn.conv2d", False)),
     ]
     for with_bias in [True, False]:
         for elt in elt_list:
