@@ -128,6 +128,30 @@ def make_conv_pattern(conv_name, with_bias=True, with_sum=False, with_eltwise=No
     return conv_out
 
 
+def make_conv_add_swish_pattern(conv_name, with_bias=True):
+    """Create patterns related to conv and conv_transpose with swish.
+
+    Parameters
+    ----------
+    conv_name : string
+        nn.conv1d-3d / nn.conv2d_transpose / nn.conv3d_transpose.
+    with_bias : bool
+        Whether attach `bias_add` to `conv / conv_transpose`.
+    Returns
+    -------
+    conv_out : CallPattern
+        Call node sequence.
+    """
+    data = wildcard()
+    weight = wildcard()
+    conv_out = is_op(conv_name)(data, weight)
+    if with_bias:
+        conv_out = is_op("add")(conv_out, wildcard())
+    sig_out = is_op("sigmoid")(conv_out)
+    out = is_op("multiply")(conv_out, sig_out)
+    return out
+
+
 def make_dense_pattern(with_bias=True, with_sum=False, with_eltwise=None):
     """Create patterns related to nn.dense.
 
@@ -207,7 +231,9 @@ def pattern_table():
         Created patterns.
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", "clip", None]
-    dnnl_patterns = []
+    dnnl_patterns = [("dnnl.conv2d_bias_sigmoid_mul", make_conv_add_swish_pattern("nn.conv2d", True)),
+                     ("dnnl.conv2d_sigmoid_mul", make_conv_add_swish_pattern("nn.conv2d", False)),
+                    ]
     for with_bias, with_sum in [(True, True), (True, False), (False, False)]:
         for elt in elt_list:
             if not with_bias and not elt:
@@ -301,6 +327,8 @@ def get_shape(tensor):
     if isinstance(tensor, tvm.ir.container.Array):
         return tensor[-1].shape
     if isinstance(tensor, relay.expr.Call):
+        if tensor.op.name=="multiply":
+            return tensor.type_args[0].shape
         return tensor.checked_type.shape
     raise TypeError("Unsupport data type: %s" % type(tensor))
 

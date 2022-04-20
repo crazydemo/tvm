@@ -699,7 +699,7 @@ def test_conv1d(run_module, dtype="float32"):
 def test_conv1d_pattern(run_module, dtype="float32"):
     x_shape = (1, 3, 224)
     k_shape = (16, 3, 3)
-    activation_lst = ["clip"]#None, "relu", "tanh", "sigmoid", 
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv1d, dic, param_lst = get_conv1d(x_shape, k_shape, activation=a, dtype=dtype)
         conv1d = tvm.IRModule.from_expr(conv1d)
@@ -772,6 +772,13 @@ def test_conv2d_pattern(run_module, dtype="float32"):
         conv2d_bn_sum_elt = tvm.IRModule.from_expr(conv2d_bn_sum_elt)
         config = conv2d_bn_sum_elt, dic, param_lst
         run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+    conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=None, dtype=dtype)
+    conv2d_bias_sig = relay.sigmoid(conv2d_bias)
+    conv2d_bias_swish = relay.multiply(conv2d_bias, conv2d_bias_sig)
+    conv2d_bias_swish = tvm.IRModule.from_expr(conv2d_bias_swish)
+    config = conv2d_bias_swish, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
 def test_conv2d_transpose(run_module, dtype="float32"):
