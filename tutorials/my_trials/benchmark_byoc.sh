@@ -4,7 +4,22 @@ record_root="/home2/zhangya9/tvm/tutorials/bench_openvino"
 target='llvm -mcpu=cascadelake -model=platinum-8280'
 dtype='float32'
 
-network_list=('efficientnet-b0-pytorch')   # 'anti-spoof-mn3')
+# "MobileNet-v2-1.0"
+# "resnet50-v1"
+# "resnet50-v2"
+# "squeezenet1.0"
+# "squeezenet1.1"
+# "vgg16"
+# "vgg16-bn"
+# "densenet121"
+# "inception_v3"
+# "shufflenet_v2"
+# "efficientnet-b0-pytorch"
+# "resnext50_32x4d"
+# "wide_resnet50_2"
+# "resnest50"
+
+network_list=('resnest50')   # 'anti-spoof-mn3')
 cores_list=('4') #('28' '28' '4')    # multi-instances should be the last one
 batch_list=('1') #('1' '128' '1')
 

@@ -5,6 +5,7 @@ for resnet50 and mobilenet
 import argparse
 
 import time
+from tkinter.tix import Tree
 from typing import Tuple
 import os
 import warnings
@@ -27,9 +28,8 @@ network_dic = { "MobileNet-v2-1.0": "MobileNet/torch_model/mobilenetv2_torch.onn
                 "squeezenet1.1": "SqueezeNet/squeezenet1.1/squeezenet1.1.onnx",
                 "vgg16": "VGG/vgg16/vgg16.onnx",
                 "vgg16-bn": "VGG/vgg16-bn/vgg16-bn.onnx",
-                "googlenet": "GoogleNet/bvlc_googlenet/model.onnx",
                 "densenet121": "DenseNet-121/densenet121/model.onnx",
-                "inception_v3": "Inception_V3/torch_model/inception_v3.onnx",
+                "inception_v3": "Inception_V3/torchvision_model/inception_v3.onnx",
                 "shufflenet_v2": "ShuffleNet_V2/torch_model/shufflenet_v2_x1_0.onnx",
                 "efficientnet-b0-pytorch": "efficientnet-b0-pytorch/efficientnet-b0.onnx",
                 "resnext50_32x4d": "ResNext/torch_model/resnext50_32x4d.onnx",
@@ -44,7 +44,6 @@ input_dic = { "MobileNet-v2-1.0": "input",
               "squeezenet1.1": "data",
               "vgg16": "data",
               "vgg16-bn": "data",
-              "googlenet": "data_0",
               "densenet121": "data_0",
               "inception_v3": "input",
               "shufflenet_v2": "input",
@@ -61,7 +60,6 @@ shape_dic = { "MobileNet-v2-1.0": [1, 3, 224, 224],
               "squeezenet1.1": [1, 3, 224, 224],
               "vgg16": [1, 3, 224, 224],
               "vgg16-bn": [1, 3, 224, 224],
-              "googlenet": [1, 3, 224, 224],
               "densenet121": [1, 3, 224, 224],
               "inception_v3": [1, 3, 299, 299],
               "shufflenet_v2": [1, 3, 224, 224],
@@ -105,15 +103,15 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                     transform.SimplifyInference(),
                     transform.FoldConstant(),
                     transform.FoldScaleAxis(),
-                    tvm.transform.PrintIR(),
+                    # tvm.transform.PrintIR(),
                     # fold consecutive add ops to simplify pattern `conv2d-bias_add-bn-relu`
                     transform.SimplifyExpr(),
                     transform.FoldConstant(),
-                    tvm.transform.PrintIR(),
+                    # tvm.transform.PrintIR(),
                     # alter group conv /conv_transpose layout to `GOIHW` / `GIOHW`
                     transform.Legalize(),
                     transform.FoldConstant(),
-                    tvm.transform.PrintIR(),
+                    # tvm.transform.PrintIR(),
                 ]
             )
             with tvm.transform.PassContext(opt_level=3):
@@ -132,7 +130,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                                 [
                                     transform.AlterOpLayout(),
                                     transform.FoldConstant(),
-                                    tvm.transform.PrintIR(),
+                                    # tvm.transform.PrintIR(),
                                 ]
                             )
                             with tvm.transform.PassContext(opt_level=3):
@@ -256,7 +254,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="MobileNet-v2-1.0",
+        default="resnest50",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")
