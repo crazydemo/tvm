@@ -714,37 +714,48 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   void Pooling(const size_t& nid, dnnl::algorithm algo) {
     auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+    bool is_global = op_name.find("global") != std::string::npos;
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
     JSONGraphNodeEntry out_entry(nid, 0);
-    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
-    dnnl::memory::dims out_shape = nodes_[out_entry.id_].GetOpShape()[out_entry.index_];
-    std::vector<std::string> str_kernel = node.GetAttr<std::vector<std::string>>("pool_size");
-    std::vector<std::string> str_strides = node.GetAttr<std::vector<std::string>>("strides");
-    std::vector<std::string> str_padding = node.GetAttr<std::vector<std::string>>("padding");
-    std::vector<std::string> str_padding_l(str_padding.begin(),
-                                           str_padding.begin() + str_padding.size() / 2);
-    std::vector<std::string> str_padding_r(str_padding.end() - str_padding.size() / 2,
-                                           str_padding.end());
-    std::vector<std::string> str_dilates = node.GetAttr<std::vector<std::string>>("dilation");
     std::string layout = node.GetAttr<std::vector<std::string>>("layout")[0];
-
     // Check layout.
     if (layout_dict.find(layout) == layout_dict.end()) {
       LOG(FATAL) << "Unsupported layout for pooling: " << layout;
     }
 
+    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    dnnl::memory::dims out_shape = nodes_[out_entry.id_].GetOpShape()[out_entry.index_];
+    dnnl::memory::dims src_dims = TransDims2Plain(input_shape, layout);
+    dnnl::memory::dims dst_dims = TransDims2Plain(out_shape, layout);
+    std::vector<std::string> feature_size;
+    for (size_t i=2; i<src_dims.size(); i++) {
+      feature_size.push_back(std::to_string(src_dims[i]));
+    }
+
+    std::vector<std::string> str_kernel = is_global ? feature_size
+                                                    : node.GetAttr<std::vector<std::string>>("pool_size");
+    std::vector<std::string> str_strides = is_global ? std::vector<std::string>(src_dims.size()-2, "1")
+                                                     : node.GetAttr<std::vector<std::string>>("strides");
+    std::vector<std::string> str_padding = is_global ? std::vector<std::string>((src_dims.size()-2) * 2, "0")
+                                                     : node.GetAttr<std::vector<std::string>>("padding");
+    std::vector<std::string> str_padding_l(str_padding.begin(),
+                                           str_padding.begin() + str_padding.size() / 2);
+    std::vector<std::string> str_padding_r(str_padding.end() - str_padding.size() / 2,
+                                           str_padding.end());
+    std::vector<std::string> str_dilates = is_global ? std::vector<std::string>(src_dims.size()-2, "1")
+                                                     : node.GetAttr<std::vector<std::string>>("dilation");
+
     // Attributes related to AvgPool
-    if (algo == dnnl::algorithm::pooling_avg) {
+    if (!is_global && algo == dnnl::algorithm::pooling_avg) {
       int int_countpad = std::stoi(node.GetAttr<std::vector<std::string>>("count_include_pad")[0]);
       bool count_include_pad = int_countpad != 0 ? true : false;
       algo = count_include_pad ? dnnl::algorithm::pooling_avg_include_padding
                                : dnnl::algorithm::pooling_avg_exclude_padding;
     }
 
-    dnnl::memory::dims src_dims = TransDims2Plain(input_shape, layout);
-    dnnl::memory::dims dst_dims = TransDims2Plain(out_shape, layout);
     dnnl::memory::dims kernel_dims = TransformStr2Dims(str_kernel);
     dnnl::memory::dims strides_dims = TransformStr2Dims(str_strides);
     dnnl::memory::dims dilates_dims = TransformStr2Dims(str_dilates, true);
