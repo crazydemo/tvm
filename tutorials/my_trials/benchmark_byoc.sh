@@ -19,7 +19,7 @@ dtype='float32'
 # "wide_resnet50_2"
 # "resnest50"
 
-network_list=('resnest50')   # 'anti-spoof-mn3')
+network_list=('efficientnet-b0-pytorch')   # 'anti-spoof-mn3')
 cores_list=('4') #('28' '28' '4')    # multi-instances should be the last one
 batch_list=('1') #('1' '128' '1')
 

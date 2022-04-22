@@ -97,12 +97,12 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
         with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", dnnl.legalize_group_conv):
             seq = tvm.transform.Sequential(
                 [
-                    # tvm.transform.PrintIR(),
+                    tvm.transform.PrintIR(),
                     transform.CanonicalizeOps(),
                     transform.InferType(),
                     transform.SimplifyInference(),
                     transform.FoldConstant(),
-                    transform.FoldScaleAxis(),
+                    # transform.FoldScaleAxis(),
                     # tvm.transform.PrintIR(),
                     # fold consecutive add ops to simplify pattern `conv2d-bias_add-bn-relu`
                     transform.SimplifyExpr(),
@@ -111,7 +111,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                     # alter group conv /conv_transpose layout to `GOIHW` / `GIOHW`
                     transform.Legalize(),
                     transform.FoldConstant(),
-                    # tvm.transform.PrintIR(),
+                    tvm.transform.PrintIR(),
                 ]
             )
             with tvm.transform.PassContext(opt_level=3):
@@ -130,7 +130,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                                 [
                                     transform.AlterOpLayout(),
                                     transform.FoldConstant(),
-                                    # tvm.transform.PrintIR(),
+                                    tvm.transform.PrintIR(),
                                 ]
                             )
                             with tvm.transform.PassContext(opt_level=3):
@@ -142,11 +142,12 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
+            tvm.transform.PrintIR(),
         ]
     )
     with tvm.transform.PassContext(opt_level=3):
         mod = byoc_seq(mod)
-        mod = dnnl.prune_dnnl_subgraphs(mod)
+        # mod = dnnl.prune_dnnl_subgraphs(mod)
     return mod
 
 def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100, batches=400, dtype="float32", target="llvm"):
@@ -217,16 +218,16 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         print("Unsupported model type!")
 
     print("=============Optimizing===============")
-    print(mod)
+    # print(mod)
     processed_mod = partition_for_dnnl(mod, params, alter_layout=True)
-    print(processed_mod)
+    # print(processed_mod)
 
     print("=============Building===============")
     with tvm.transform.PassContext(opt_level=3):
         json, lib, params = relay.build(processed_mod, target=target, params=params)
     # print(json)
-    import tvm.contrib.graph_executor as graph_executor
-    # from tvm.contrib.debugger import debug_executor as graph_executor
+    # import tvm.contrib.graph_executor as graph_executor
+    from tvm.contrib.debugger import debug_executor as graph_executor
     rt_mod = graph_executor.create(json, lib, ctx)
     
     rt_mod.set_input(input_name, tvm.nd.array(sample.astype(dtype)))
@@ -243,8 +244,8 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     for i in range(batches+warmup):
         if i == warmup:
             tic = time.time()
-        rt_mod.run()
-        # print(rt_mod.profile())
+        # rt_mod.run()
+        print(rt_mod.profile())
     with_fuse_fps = batches * batch_size / (time.time() - tic)
     print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
 
@@ -254,7 +255,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="resnest50",
+        default="efficientnet-b0-pytorch",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")
@@ -266,8 +267,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dtype", type=str, default="float32", help="The data type.")
     
-    parser.add_argument("--warmup", type=int, default=0)
-    parser.add_argument("--batches", type=int, default=1)
+    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--batches", type=int, default=10)
     parser.add_argument("--profiling", type=bool, default=False)
     parser.add_argument("--check_acc", type=bool, default=False)
     args = parser.parse_args()

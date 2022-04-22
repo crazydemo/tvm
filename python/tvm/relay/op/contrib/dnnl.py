@@ -123,15 +123,29 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     return conv_out
 
 
-def make_conv_add_sum_relu_pattern(conv_type):
+def make_conv_add_sum_pattern(conv_name, with_eltwise=None):
+    """Create patterns related to conv and conv_transpose with swish.
+
+    Parameters
+    ----------
+    conv_name : string
+        nn.conv1d-3d / nn.conv2d_transpose / nn.conv3d_transpose.
+    with_eltwise : bool
+        Whether attach elementwise op, such as nn.relu.
+    Returns
+    -------
+    conv_out : CallPattern
+        Call node sequence.
+    """
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
-    out = is_op(conv_type)(data1, weight)
+    out = is_op(conv_name)(data1, weight)
     out = is_op("add")(out, bias)
     out = is_op("add")(out, data2)
-    out = is_op("nn.relu")(out)
+    if with_eltwise:
+        return is_op(with_eltwise)(out)
     return out
 
 
@@ -232,8 +246,10 @@ def pattern_table():
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", None]
     dnnl_patterns = [
-        ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
-        ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
+        ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_pattern("nn.conv2d", "nn.relu")),
+        ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_pattern("nn.conv3d", "nn.relu")),
+        ("dnnl.conv2d_bias_sum", make_conv_add_sum_pattern("nn.conv2d")),
+        ("dnnl.conv3d_bias_sum", make_conv_add_sum_pattern("nn.conv3d")),
         ("dnnl.conv2d_bias_sigmoid_mul", make_conv_add_swish_pattern("nn.conv2d", True)),
         ("dnnl.conv2d_sigmoid_mul", make_conv_add_swish_pattern("nn.conv2d", False)),
     ]
