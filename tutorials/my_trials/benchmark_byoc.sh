@@ -20,7 +20,7 @@ dtype='float32'
 # "resnest50"
 
 network_list=('resnest50')   # 'anti-spoof-mn3')
-cores_list=('4') #('28' '28' '4')    # multi-instances should be the last one
+cores_list=('28') #('28' '28' '4')    # multi-instances should be the last one
 batch_list=('1') #('1' '128' '1')
 
 repeat=100
