@@ -123,7 +123,7 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     return conv_out
 
 
-def make_conv_add_sum_relu_pattern(conv_type):
+def make_conv_add_sum_elt_pattern(conv_type, with_elt=None):
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
@@ -131,7 +131,21 @@ def make_conv_add_sum_relu_pattern(conv_type):
     out = is_op(conv_type)(data1, weight)
     out = is_op("add")(out, bias)
     out = is_op("add")(out, data2)
-    out = is_op("nn.relu")(out)
+    if with_elt:
+        return is_op(with_elt)(out)
+    return out
+
+
+def make_conv_add_sum_reverse_elt_pattern(conv_type, with_elt=None):
+    data1 = wildcard()
+    weight = wildcard()
+    bias = wildcard()
+    data2 = wildcard()
+    out = is_op(conv_type)(data1, weight)
+    out = is_op("add")(out, bias)
+    out = is_op("add")(data2, out)
+    if with_elt:
+        return is_op(with_elt)(out)
     return out
 
 
@@ -208,8 +222,9 @@ def pattern_table():
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", "clip", None]
     dnnl_patterns = [
-        ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
-        ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
+        ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_elt_pattern("nn.conv2d", "nn.relu")),
+        ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_elt_pattern("nn.conv3d", "nn.relu")),
+        ("dnnl.conv2d_bias_sumreverse", make_conv_add_sum_reverse_elt_pattern("nn.conv2d")),
     ]
     for with_bias in [True, False]:
         for elt in elt_list:

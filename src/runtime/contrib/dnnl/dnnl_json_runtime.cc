@@ -334,11 +334,23 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::primitive_attr attr;
     ParsingOpName(op_name, attr);
     bool has_bias = false, has_sum = false;
-    auto bias_entry = node.GetInputs()[0], sum_entry = node.GetInputs()[0];
+    std::vector<size_t> indices;
+    if (op_name.find("sumreverse") == std::string::npos) {
+      for (size_t i = 0; i < node.GetInputs().size(); i++) {
+        indices.push_back(i);
+      }
+    } else {
+      for (size_t i = 1; i < node.GetInputs().size(); i++) {
+        indices.push_back(i);
+      }
+      indices.push_back(0);
+    }
+
+    auto bias_entry = node.GetInputs()[indices[0]], sum_entry = node.GetInputs()[indices[0]];
 
     // Setup attributes.
-    auto data_entry = node.GetInputs()[0];
-    auto weight_entry = node.GetInputs()[1];
+    auto data_entry = node.GetInputs()[indices[0]];
+    auto weight_entry = node.GetInputs()[indices[1]];
     JSONGraphNodeEntry out_entry(nid, 0);
     dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
@@ -406,7 +418,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         if (dst_dims[i] == 0) break;
         dst_size *= dst_dims[i];
       }
-      for (size_t i = 2; i < node.GetInputs().size(); i++) {
+      for (size_t i = indices[2]; i < indices.size(); i++) {
         auto add_entry = node.GetInputs()[i];
         dnnl::memory::dims add_dims = nodes_[add_entry.id_].GetOpShape()[add_entry.index_];
         dnnl::memory::dim add_size = 1;
