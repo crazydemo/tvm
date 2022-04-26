@@ -254,7 +254,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="resnest50",
+        default="resnet50-v1",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")
