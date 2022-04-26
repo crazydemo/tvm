@@ -76,7 +76,7 @@ _register_external_op_helper("nn.conv3d")
 _register_external_op_helper("nn.conv2d_transpose")
 _register_external_op_helper("nn.conv3d_transpose")
 _register_external_op_helper("nn.dense")
-# _register_external_op_helper("nn.max_pool2d")
+_register_external_op_helper("nn.max_pool2d")
 # _register_external_op_helper("nn.avg_pool2d")
 # _register_external_op_helper("nn.max_pool3d")
 # _register_external_op_helper("nn.avg_pool3d")
@@ -132,6 +132,14 @@ def make_conv_add_sum_relu_pattern(conv_type):
     out = is_op("add")(out, bias)
     out = is_op("add")(out, data2)
     out = is_op("nn.relu")(out)
+    return out
+
+
+def make_shuffle_channel_pattern():
+    data = wildcard()
+    out = is_op("reshape")(data)
+    out = is_op("transpose")(out)
+    out = is_op("reshape")(out)
     return out
 
 
@@ -210,6 +218,7 @@ def pattern_table():
     dnnl_patterns = [
         ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
         ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
+        ("dnnl.shuffle_channel", make_shuffle_channel_pattern()),
     ]
     for with_bias in [True, False]:
         for elt in elt_list:

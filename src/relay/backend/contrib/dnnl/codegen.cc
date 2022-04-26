@@ -446,6 +446,8 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       {"relu", "nn.relu"},
       {"tanh", "tanh"},
       {"sigmoid", "sigmoid"},
+      {"reshape", "reshape"},
+      {"transpose", "transpose"},
       {"nn.deconv2d", "nn.conv2d_transpose"},
       {"nn.deconv3d", "nn.conv3d_transpose"},
   };
@@ -511,6 +513,9 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name.find("dnnl.dense") != std::string::npos) {
         std::vector<std::string> op_list = ParsingOpList(name);
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.shuffle_channel") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"reshape", "transpose", "reshape"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;

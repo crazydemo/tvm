@@ -290,6 +290,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Binary(nid, dnnl::algorithm::binary_add);
         } else if ("multiply" == op_name) {
           Binary(nid, dnnl::algorithm::binary_mul);
+        } else if ("dnnl.shuffle_channel" == op_name) {
+          Shuffle(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -867,6 +869,44 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_args_.push_back({{DNNL_ARG_SRC_0, data_memories[0]},
                          {DNNL_ARG_SRC_1, data_memories[1]},
                          {DNNL_ARG_DST, out_memory}});
+  }
+
+  void Shuffle(const size_t& nid) {
+    auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+
+    // Setup attributes.
+    auto data_entry = node.GetInputs()[0];
+    JSONGraphNodeEntry out_entry(nid, 0);
+
+    // Shuffle axis and group size.
+    const int shuffle_axis = 1;
+    const int group_size = 2;
+
+    dnnl::memory::dims src_dims = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+
+    // Memory descriptions.
+    auto src_md = dnnl::memory::desc(src_dims, dt::f32, tag::nchw);
+    auto dst_md = dnnl::memory::desc(src_dims, dt::f32, tag::abcd);
+
+    // Create operation descriptor.
+    auto shuffle_desc = dnnl::shuffle_forward::desc(
+            dnnl::prop_kind::forward_inference, src_md, shuffle_axis, group_size);
+
+    // Create primitive descriptor.
+    auto shuffle_prim_desc = dnnl::shuffle_forward::primitive_desc(shuffle_desc, engine_);
+
+    // Create the primitive.
+    auto shuffle = dnnl::shuffle_forward(shuffle_prim_desc);
+    net_.push_back(shuffle);
+
+    // Memories.
+    auto shuffle_src_memory = BindDNNLMemory(data_entry, src_md);
+
+    auto shuffle_dst_memory = BindDNNLMemory(out_entry, dst_md);
+
+    // Bind memory buffers.
+    net_args_.push_back({{DNNL_ARG_SRC, shuffle_src_memory}, {DNNL_ARG_DST, shuffle_dst_memory}});
   }
 
   // Read from DNNL memory (+offset) and write to the handle.
