@@ -217,9 +217,9 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         print("Unsupported model type!")
 
     print("=============Optimizing===============")
-    print(mod)
+    # print(mod)
     processed_mod = partition_for_dnnl(mod, params, alter_layout=True)
-    print(processed_mod)
+    # print(processed_mod)
 
     print("=============Building===============")
     with tvm.transform.PassContext(opt_level=3):
@@ -237,7 +237,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         onnx_output = list(backend.run_model(onnx_model, sample))
         rt_mod.run()
         tvm_output = rt_mod.get_output(0)
-        print(np.testing.assert_almost_equal(onnx_output, [tvm_output.asnumpy()], 5))
+        print(network, np.testing.assert_almost_equal(onnx_output, [tvm_output.asnumpy()], 4))
     # out = rt_mod.run()
     print("=============Running===============")
     for i in range(batches+warmup):
@@ -254,7 +254,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="resnest50",
+        default="all",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")
@@ -271,8 +271,27 @@ if __name__ == "__main__":
     parser.add_argument("--profiling", type=bool, default=False)
     parser.add_argument("--check_acc", type=bool, default=False)
     args = parser.parse_args()
-
     target = tvm.target.Target(args.target)
 
-    benchmark(args.network, args.batch_size, profiling=args.profiling,check_acc=args.check_acc,\
+    if args.network == "all":
+        for net in [
+                    "MobileNet-v2-1.0",
+                    "resnet50-v1",
+                    "resnet50-v2",
+                    "squeezenet1.0",
+                    "squeezenet1.1",
+                    "vgg16",
+                    "vgg16-bn",
+                    "densenet121",
+                    "inception_v3",
+                    "shufflenet_v2",
+                    "efficientnet-b0-pytorch",
+                    "resnext50_32x4d",
+                    "wide_resnet50_2",
+                    "resnest50"]:
+            print("################checking {}#################".format(net))
+            benchmark(net, args.batch_size, profiling=args.profiling,check_acc=args.check_acc,\
+            warmup=args.warmup, batches=args.batches, dtype=args.dtype, target=args.target)
+    else:
+        benchmark(args.network, args.batch_size, profiling=args.profiling,check_acc=args.check_acc,\
             warmup=args.warmup, batches=args.batches, dtype=args.dtype, target=args.target)
