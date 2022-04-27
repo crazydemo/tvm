@@ -858,9 +858,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       data_mds.push_back(data_md);
       data_memories.push_back(BindDNNLMemory(entry, data_md));
     }
-    ICHECK(data_dims[0] == data_dims[1]);
-    auto out_md = data_mds[0];
+
     JSONGraphNodeEntry out_entry(nid, 0);
+    auto data_shape = nodes_[out_entry.id_].GetOpShape()[out_entry.index_];
+    dnnl::memory::desc out_md = GenDNNLMemDescByShape(data_shape, dt::f32);
     auto out_memory = BindDNNLMemory(out_entry, out_md);
 
     auto binary_desc = dnnl::binary::desc(algo, data_mds[0], data_mds[1], out_md);
