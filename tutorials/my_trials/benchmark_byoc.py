@@ -288,7 +288,8 @@ if __name__ == "__main__":
                     "efficientnet-b0-pytorch",
                     "resnext50_32x4d",
                     "wide_resnet50_2",
-                    "resnest50"]:
+                    "resnest50"
+                    ]:
             print("################checking {}#################".format(net))
             benchmark(net, args.batch_size, profiling=args.profiling,check_acc=args.check_acc,\
             warmup=args.warmup, batches=args.batches, dtype=args.dtype, target=args.target)
