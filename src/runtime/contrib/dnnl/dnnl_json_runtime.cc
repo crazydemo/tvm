@@ -128,7 +128,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       // Blocking layout.
       {"NCW8c", tag::nCw8c},
       {"NCW16c", tag::nCw16c},
-      {"OIW16i16o", tag::OIw8i8o},
+      {"OIW8i8o", tag::OIw8i8o},
       {"OIW16i16o", tag::OIw16i16o},
       {"OWI8o", tag::Owi8o},
       {"OWI16o", tag::Owi16o},
