@@ -213,6 +213,7 @@ inline bool GetStoreRule(Array<PrimExpr>* index_rule, Array<PrimExpr>* shape_rul
     const auto& store_axis = dst_layout[i];
     const IterVar& store_axis_impl = dst_layout->axes[i];
     PrimExpr index_store(0);
+    PrimExpr shape_store = index_store;
 
     for (size_t j = 0; j < src_layout.ndim(); ++j) {
       const auto& orig_axis = src_layout[j];
@@ -220,11 +221,14 @@ inline bool GetStoreRule(Array<PrimExpr>* index_rule, Array<PrimExpr>* shape_rul
       if (store_axis.ToPrimal() == orig_axis.ToPrimal()) {
         if (orig_axis.IsPrimal()) {
           PrimExpr orig_var = orig_axis_impl->var;
+          PrimExpr orig_var_pad = orig_var;
           const int32_t factor = src_layout.FactorOf(orig_axis);
           if (factor > 0) {
             orig_var = orig_var * factor;
+            orig_var_pad = orig_var_pad * factor - factor / PrimExpr(2);
           }
           index_store = index_store + orig_var;
+          shape_store = shape_store + orig_var_pad;
         } else {
           PrimExpr factor(1);
           for (size_t k = j + 1; k < src_layout.ndim(); ++k) {
@@ -233,6 +237,7 @@ inline bool GetStoreRule(Array<PrimExpr>* index_rule, Array<PrimExpr>* shape_rul
             }
           }
           index_store = index_store + orig_axis_impl->var * factor;
+          shape_store = shape_store + orig_axis_impl->var * factor;
         }
       }
     }
@@ -241,7 +246,6 @@ inline bool GetStoreRule(Array<PrimExpr>* index_rule, Array<PrimExpr>* shape_rul
       return false;
     }
 
-    PrimExpr shape_store = index_store;
     if (store_axis.IsPrimal()) {
       const int32_t factor = dst_layout.FactorOf(store_axis);
       if (factor > 0) {
