@@ -140,40 +140,40 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"GIODHW", tag::giodhw},
 
       // Blocking layout.
-      {"NCW8c", tag::nCw8c},
-      {"NCW16c", tag::nCw16c},
-      {"OIW8i8o", tag::OIw8i8o},
-      {"OIW16i16o", tag::OIw16i16o},
-      {"OWI8o", tag::Owi8o},
-      {"OWI16o", tag::Owi16o},
-      {"NCHW4c", tag::nChw4c},
-      {"NCHW8c", tag::nChw8c},
-      {"NCHW16c", tag::nChw16c},
-      {"OIHW8i8o", tag::OIhw8i8o},
-      {"IOHW8i8o", tag::any},
-      {"OIHW16i16o", tag::OIhw16i16o},
-      {"IOHW16i16o", tag::IOhw16i16o},
-      {"GOIHW4i4o", tag::gOIhw4i4o},
-      {"GOIHW8i8o", tag::gOIhw8i8o},
-      {"GOIHW16i16o", tag::gOIhw16i16o},
-      {"OHWI8o", tag::Ohwi8o},
-      {"OHWI16o", tag::Ohwi16o},
-      {"OHWI32o", tag::Ohwi32o},
-      {"OHWI48o", tag::Ohwi48o},
-      {"OHWI64o", tag::Ohwi64o},
-      {"GOIHW8g", tag::Goihw8g},
-      {"GOIHW16g", tag::Goihw16g},
-      {"NCDHW8c", tag::nCdhw8c},
-      {"NCDHW16c", tag::nCdhw16c},
-      {"OIDHW16i16o", tag::OIdhw16i16o},
-      {"IODHW16i16o", tag::IOdhw16i16o},
-      {"OIDHW8i8o", tag::OIdhw8i8o},
-      {"IODHW8i8o", tag::any},
-      {"ODHWI8o", tag::Odhwi8o},
-      {"ODHWI16o", tag::Odhwi16o},
-      {"ODHWI32o", tag::Odhwi32o},
-      {"ODHWI48o", tag::Odhwi48o},
-      {"ODHWI64o", tag::Odhwi64o},
+      // {"NCW8c", tag::nCw8c},
+      // {"NCW16c", tag::nCw16c},
+      // {"OIW8i8o", tag::OIw8i8o},
+      // {"OIW16i16o", tag::OIw16i16o},
+      // {"OWI8o", tag::Owi8o},
+      // {"OWI16o", tag::Owi16o},
+      // {"NCHW4c", tag::nChw4c},
+      // {"NCHW8c", tag::nChw8c},
+      // {"NCHW16c", tag::nChw16c},
+      // {"OIHW8i8o", tag::OIhw8i8o},
+      // {"IOHW8i8o", tag::any},
+      // {"OIHW16i16o", tag::OIhw16i16o},
+      // {"IOHW16i16o", tag::IOhw16i16o},
+      // {"GOIHW4i4o", tag::gOIhw4i4o},
+      // {"GOIHW8i8o", tag::gOIhw8i8o},
+      // {"GOIHW16i16o", tag::gOIhw16i16o},
+      // {"OHWI8o", tag::Ohwi8o},
+      // {"OHWI16o", tag::Ohwi16o},
+      // {"OHWI32o", tag::Ohwi32o},
+      // {"OHWI48o", tag::Ohwi48o},
+      // {"OHWI64o", tag::Ohwi64o},
+      // {"GOIHW8g", tag::Goihw8g},
+      // {"GOIHW16g", tag::Goihw16g},
+      // {"NCDHW8c", tag::nCdhw8c},
+      // {"NCDHW16c", tag::nCdhw16c},
+      // {"OIDHW16i16o", tag::OIdhw16i16o},
+      // {"IODHW16i16o", tag::IOdhw16i16o},
+      // {"OIDHW8i8o", tag::OIdhw8i8o},
+      // {"IODHW8i8o", tag::any},
+      // {"ODHWI8o", tag::Odhwi8o},
+      // {"ODHWI16o", tag::Odhwi16o},
+      // {"ODHWI32o", tag::Odhwi32o},
+      // {"ODHWI48o", tag::Odhwi48o},
+      // {"ODHWI64o", tag::Odhwi64o},
   };
 
   void ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
@@ -356,7 +356,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // Check layout.
     if (layout_dict.find(data_layout) == layout_dict.end()) {
-      LOG(FATAL) << "Unsupported data layout for conv: " << data_layout;
+      layout_dict.insert({data_layout, tag::any});
+      LOG(WARNING) << "Unregistered data layout for conv: " << data_layout
+                   << ", transfer to tag::any";
     }
 
     if (layout_dict.find(kernel_layout) == layout_dict.end()) {
@@ -445,7 +447,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_.push_back(conv);
 
     // Data memory.
-    auto conv_src_memory = BindDNNLMemory(data_entry, conv_src_md);
+    auto conv_src_memory = BindDNNLMemory(data_entry, conv_prim_desc.src_desc());
 
     // Weight memory.
     auto conv_weights_memory = BindDNNLMemory(weight_entry, conv_prim_desc.weights_desc());
