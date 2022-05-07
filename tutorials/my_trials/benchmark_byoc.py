@@ -93,8 +93,8 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
     if params:
         mod["main"] = bind_params_by_name(mod["main"], params)
 
-    with TempOpAttr("nn.conv2d", "FTVMLegalize", dnnl.legalize_group_conv):
-        with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", dnnl.legalize_group_conv):
+    with TempOpAttr("nn.conv2d", "FTVMLegalize", dnnl.advance_downsize_for_resnetv1_1):
+    #     with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", dnnl.legalize_group_conv):
             seq = tvm.transform.Sequential(
                 [
                     # tvm.transform.PrintIR(),
@@ -110,12 +110,34 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                     # tvm.transform.PrintIR(),
                     # alter group conv /conv_transpose layout to `GOIHW` / `GIOHW`
                     transform.Legalize(),
-                    transform.FoldConstant(),
                     # tvm.transform.PrintIR(),
+                    transform.FoldConstant(),
+                    tvm.transform.PrintIR(),
                 ]
             )
             with tvm.transform.PassContext(opt_level=3):
                 mod = seq(mod)
+    # with TempOpAttr("nn.conv2d", "FTVMLegalize", dnnl.advance_downsize_for_resnetv1_2):
+    #     seq = tvm.transform.Sequential(
+    #             [
+    #                 transform.Legalize(),
+    #                 transform.FoldConstant(),
+    #                 tvm.transform.PrintIR(),
+    #             ]
+    #         )
+    #     with tvm.transform.PassContext(opt_level=3):
+    #             mod = seq(mod)
+    # with TempOpAttr("nn.conv2d", "FTVMLegalize", dnnl.advance_downsize_for_resnetv1_3):
+    #     seq = tvm.transform.Sequential(
+    #             [
+    #                 transform.Legalize(),
+    #                 transform.FoldConstant(),
+    #                 tvm.transform.PrintIR(),
+    #             ]
+    #         )
+    #     with tvm.transform.PassContext(opt_level=3):
+    #             mod = seq(mod)
+
     if alter_layout:
         with TempOpAttr("nn.conv1d", "FTVMAlterOpLayout", dnnl.alter_conv):
             with TempOpAttr("nn.conv2d", "FTVMAlterOpLayout", dnnl.alter_conv):
