@@ -93,8 +93,8 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
     if params:
         mod["main"] = bind_params_by_name(mod["main"], params)
 
-    with TempOpAttr("nn.conv2d", "FTVMLegalize", dnnl.legalize_group_conv):
-        with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", dnnl.legalize_group_conv):
+    with TempOpAttr("nn.avg_pool2d", "FTVMLegalize", dnnl.legalize_pad_avg_pool):
+        # with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", dnnl.legalize_group_conv):
             seq = tvm.transform.Sequential(
                 [
                     # tvm.transform.PrintIR(),
@@ -111,7 +111,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
                     # alter group conv /conv_transpose layout to `GOIHW` / `GIOHW`
                     transform.Legalize(),
                     transform.FoldConstant(),
-                    # tvm.transform.PrintIR(),
+                    tvm.transform.PrintIR(),
                 ]
             )
             with tvm.transform.PassContext(opt_level=3):
@@ -146,7 +146,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
     )
     with tvm.transform.PassContext(opt_level=3):
         mod = byoc_seq(mod)
-        mod = dnnl.prune_dnnl_subgraphs(mod)
+        # mod = dnnl.prune_dnnl_subgraphs(mod)
     return mod
 
 def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100, batches=400, dtype="float32", target="llvm"):
@@ -243,8 +243,8 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     for i in range(batches+warmup):
         if i == warmup:
             tic = time.time()
-        rt_mod.run()
-        # print(rt_mod.profile())
+        # rt_mod.run()
+        print(rt_mod.profile())
     with_fuse_fps = batches * batch_size / (time.time() - tic)
     print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
 
@@ -269,7 +269,7 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--batches", type=int, default=1)
     parser.add_argument("--profiling", type=bool, default=False)
-    parser.add_argument("--check_acc", type=bool, default=False)
+    parser.add_argument("--check_acc", type=bool, default=True)
     args = parser.parse_args()
 
     target = tvm.target.Target(args.target)

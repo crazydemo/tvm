@@ -76,8 +76,8 @@ _register_external_op_helper("nn.conv3d")
 _register_external_op_helper("nn.conv2d_transpose")
 _register_external_op_helper("nn.conv3d_transpose")
 _register_external_op_helper("nn.dense")
-_register_external_op_helper("nn.max_pool2d")
-_register_external_op_helper("nn.avg_pool2d")
+# _register_external_op_helper("nn.max_pool2d")
+# _register_external_op_helper("nn.avg_pool2d")
 # _register_external_op_helper("nn.max_pool3d")
 # _register_external_op_helper("nn.avg_pool3d")
 _register_external_op_helper("nn.global_avg_pool2d")
@@ -359,6 +359,22 @@ def legalize_group_conv(attrs, inputs, types):
         return relay.nn.conv2d(data, weight, **new_attrs)
     new_attrs["kernel_layout"] = "GIOHW"
     return relay.nn.conv2d_transpose(data, weight, **new_attrs)
+
+
+def legalize_pad_avg_pool(attrs, inputs, types):
+    """Legalize group conv / conv_transpose calculation.
+    Alter weight layout from OIHW to GOIHW / IOHW to GIOHW"""
+    data = inputs[0]
+    print(type(data))
+    if isinstance(data, relay.expr.Call) and data.op.name == "nn.pad":
+        print("==========================")
+        print(data.op.name)
+        new_attrs = dict(attrs)
+        new_attrs["padding"] = (1, 1)
+        new_attrs["count_include_pad"] = True
+        # print(new_attrs["padding"])
+        return relay.nn.avg_pool2d(data.args[0], **new_attrs)
+
 
 
 def alter_conv(attrs, inputs, tinfos, out_type):
