@@ -33,7 +33,6 @@ it is supported. For example:
 check the attributes of the op and decide if it should be offloaded to DNNL.
 """
 import logging
-import turtle
 
 import tvm.ir
 from tvm import relay
@@ -47,6 +46,9 @@ from .register import register_pattern_table
 
 logger = logging.getLogger("DNNL")
 
+cnt_for_conv64_64_3_3 = 0
+cnt_for_conv128_128_3_3 = 0
+cnt_for_conv256_256_3_3 = 0
 
 def _register_external_op_helper(op_name, supported=True):
     """The helper function to indicate that a given operator can be supported
@@ -362,158 +364,95 @@ def legalize_group_conv(attrs, inputs, types):
     return relay.nn.conv2d_transpose(data, weight, **new_attrs)
 
 
-def advance_downsize_for_resnetv1_1(attrs, inputs, types):
+def advance_downsize_for_resnetv1(attrs, inputs, types):
     """Modify conv 1*1 with stride equals 2."""
-    strides = attrs.strides
-    data, weight = inputs
-    weight_shape = ",".join([str(x) for x in get_shape(weight)])
-    # print("++++++++++++++++")
-    # print(weight_shape, strides)
-    # print("++++++++++++++++")
-    new_attrs = dict(attrs)
+    shapes_to_change = [(512, 256, 1, 1), (1024, 512, 1, 1), (2048, 1024, 1, 1)]
+    left, right = inputs
+    if isinstance(right, relay.expr.Call) and right.op.name == "add":
+        add_op = right
+        if isinstance(add_op.args[0], relay.expr.Call) and add_op.args[0].op.name == "nn.conv2d":
+            conv11 = add_op.args[0]
+            if get_shape(conv11.args[1]) in shapes_to_change:
+                left1_ops = []
+                left1_args = []
+                left1_attrs = []
+                right1_ops = []
+                right1_args = []
+                right1_attrs = []
+                '''left1   bias_add(conv11(relu(bias(conv33(relu(bias(conv11)))))))'''
+                cur_op = left
+                for _ in range(7):
+                    left1_ops.append(cur_op.op.name)
+                    if len(cur_op.args)>1:
+                        left1_args.append(cur_op.args[1])
+                    if (cur_op.op.name == "nn.conv2d"):
+                        left1_attrs.append(cur_op.attrs)
+                    cur_op = cur_op.args[0]
+                if cur_op.op.name == "nn.conv2d":
+                    new_conv11_attr = dict(cur_op.attrs)
+                    new_conv11_attr["strides"] = [1, 1]
+                    left1_ops.append(cur_op.op.name)
+                    left1_args.append(cur_op.args[1])
+                    left1_attrs.append(new_conv11_attr)
+                '''right1  bias(conv11)'''
+                bias_add = right
+                right1_ops.append(bias_add.op.name)
+                right1_args.append(bias_add.args[1])
+                conv11 = bias_add.args[0]
+                new_conv11_attr = dict(conv11.attrs)
+                new_conv11_attr["strides"] = [1, 1]
+                right1_ops.append(conv11.op.name)
+                right1_args.append(conv11.args[1])
+                right1_attrs.append(new_conv11_attr)
 
-    switch_to_stride1_set = ("512,256,1,1")
-                        
-    modify_graph_set = ("128,256,1,1")
-    # if weight_shape in switch_to_stride1_set and strides[0] == 2:
-    #     # print(weight_shape)
-    #     new_attrs["strides"] = (1, 1)
-    if weight_shape in modify_graph_set and strides[0] == 2:
-        # print(weight_shape)
-        new_attrs["strides"] = (1, 1)
-        add_op = data.args[0]
-        left_ops = []
-        left_args = []
-        cur_op = add_op.args[0]
-        for _ in range(4):
-            left_ops.append(cur_op.op.name)
-            if len(cur_op.args)>1:
-                left_args.append(cur_op.args[1])
-            if cur_op.op.name == "nn.conv2d":
-                conv11_attrs = dict(cur_op.attrs)
-            cur_op = cur_op.args[0]
 
-        new_conv33_attrs = dict(cur_op.attrs)
-        new_conv33_attrs["strides"] = (2, 2)
-        new_conv33 = relay.nn.conv2d(cur_op.args[0], cur_op.args[1], **new_conv33_attrs)
-        left = relay.add(new_conv33, left_args[-1])
-        left = relay.nn.relu(left)
-        left = relay.nn.conv2d(left, left_args[-2], **conv11_attrs)
-        left = relay.add(left, left_args[-3])
-
-        right = relay.nn.max_pool2d(add_op.args[1], strides=(2, 2))
-
-        out = relay.add(left, right)
-        data = relay.nn.relu(out)
-        print("im here")
-        print(data)
-        print("==============================")
+                left2_ops = []
+                left2_args = []
+                left2_attrs = []
+                add_op = cur_op.args[0].args[0]
+                left, right = add_op.args[0], add_op.args[1]
+                '''left2   bias(conv11(relu(bias(conv33))))'''
+                cur_op = left
+                for _ in range(4):
+                    left2_ops.append(cur_op.op.name)
+                    if len(cur_op.args)>1:
+                        left2_args.append(cur_op.args[1])
+                    if (cur_op.op.name == "nn.conv2d"):
+                        left2_attrs.append(cur_op.attrs)
+                    cur_op = cur_op.args[0]
+                if cur_op.op.name == "nn.conv2d":
+                    new_conv33_attr = dict(cur_op.attrs)
+                    new_conv33_attr["strides"] = [2, 2]
+                    left2_ops.append(cur_op.op.name)
+                    left2_args.append(cur_op.args[1])
+                    left2_attrs.append(new_conv33_attr)
+                '''right2'''
+                downsize = relay.nn.max_pool2d(right, strides=[2, 2])
                 
-    return relay.nn.conv2d(data, weight, **new_attrs)
+                '''construct graph'''
+                new_conv33 = relay.nn.conv2d(cur_op.args[0], left2_args[-1], **left2_attrs[-1])
+                new_conv33 = relay.add(new_conv33, left2_args[-2])
+                new_conv33 = relay.nn.relu(new_conv33)
+                new_conv11 = relay.nn.conv2d(new_conv33, left2_args[-3], **left2_attrs[-2])
+                new_conv11 = relay.add(new_conv11, left2_args[-4])
+                layer2 = relay.nn.relu(relay.add(new_conv11, downsize))
 
-
-def advance_downsize_for_resnetv1_2(attrs, inputs, types):
-    """Modify conv 1*1 with stride equals 2."""
-    strides = attrs.strides
-    data, weight = inputs
-    weight_shape = ",".join([str(x) for x in get_shape(weight)])
-    # print("++++++++++++++++")
-    # print(weight_shape, strides)
-    # print("++++++++++++++++")
-    new_attrs = dict(attrs)
-
-    switch_to_stride1_set = ("1024,512,1,1")
-                        
-    modify_graph_set = ("256,512,1,1")
-
-    # if weight_shape in switch_to_stride1_set and strides[0] == 2:
-    #     # print(weight_shape)
-    #     new_attrs["strides"] = (1, 1)
-    if weight_shape in modify_graph_set and strides[0] == 2:
-        # print(weight_shape)
-        new_attrs["strides"] = (1, 1)
-        add_op = data.args[0]
-        left_ops = []
-        left_args = []
-        cur_op = add_op.args[0]
-        for _ in range(4):
-            left_ops.append(cur_op.op.name)
-            if len(cur_op.args)>1:
-                left_args.append(cur_op.args[1])
-            if cur_op.op.name == "nn.conv2d":
-                conv11_attrs = dict(cur_op.attrs)
-            cur_op = cur_op.args[0]
-
-        new_conv33_attrs = dict(cur_op.attrs)
-        new_conv33_attrs["strides"] = (1, 1)
-        new_conv33 = relay.nn.conv2d(cur_op.args[0], cur_op.args[1], **new_conv33_attrs)
-        left = relay.add(new_conv33, left_args[-1])
-        left = relay.nn.relu(left)
-        left = relay.nn.conv2d(left, left_args[-2], **conv11_attrs)
-        left = relay.add(left, left_args[-3])
-
-        right = relay.nn.max_pool2d(add_op.args[1], strides=(2, 2))
-
-        out = relay.add(left, right)
-        data = relay.nn.relu(out)
-        # print("im here")
-        # print(data)
-        # print("==============================")
+                '''left 1'''
+                left1 = relay.nn.conv2d(layer2, left1_args[-1], **left1_attrs[-1])
+                left1 = relay.add(left1, left1_args[-2])
+                left1 = relay.nn.relu(left1)
+                left1 = relay.nn.conv2d(left1, left1_args[-3], **left1_attrs[-2])
+                left1 = relay.add(left1, left1_args[-4])
+                left1 = relay.nn.relu(left1)
+                left1 = relay.nn.conv2d(left1, left1_args[-5], **left1_attrs[-3])
+                left1 = relay.add(left1, left1_args[-6])
                 
-    return relay.nn.conv2d(data, weight, **new_attrs)
+                '''right 1'''
+                right1 = relay.nn.conv2d(layer2, right1_args[-1], **right1_attrs[-1])
+                right1 = relay.add(right1, right1_args[-2])
 
-
-def advance_downsize_for_resnetv1_3(attrs, inputs, types):
-    """Modify conv 1*1 with stride equals 2."""
-    strides = attrs.strides
-    data, weight = inputs
-    weight_shape = ",".join([str(x) for x in get_shape(weight)])
-    # print("++++++++++++++++")
-    # print(weight_shape, strides)
-    # print("++++++++++++++++")
-    new_attrs = dict(attrs)
-
-    switch_to_stride1_set = ("2048,1024,1,1")
-                        
-                        
-    modify_graph_set = ("512,1024,1,1")
-
-    if weight_shape in switch_to_stride1_set and strides[0] == 2:
-        # print(weight_shape)
-        new_attrs["strides"] = (1, 1)
-
-    if weight_shape in modify_graph_set and strides[0] == 2:
-        # print(weight_shape)
-        new_attrs["strides"] = (1, 1)
-        add_op = data.args[0]
-        left_ops = []
-        left_args = []
-        cur_op = add_op.args[0]
-        for _ in range(4):
-            left_ops.append(cur_op.op.name)
-            if len(cur_op.args)>1:
-                left_args.append(cur_op.args[1])
-            if cur_op.op.name == "nn.conv2d":
-                conv11_attrs = dict(cur_op.attrs)
-            cur_op = cur_op.args[0]
-
-        new_conv33_attrs = dict(cur_op.attrs)
-        new_conv33_attrs["strides"] = (2, 2)
-        new_conv33 = relay.nn.conv2d(cur_op.args[0], cur_op.args[1], **new_conv33_attrs)
-        left = relay.add(new_conv33, left_args[-1])
-        left = relay.nn.relu(left)
-        left = relay.nn.conv2d(left, left_args[-2], **conv11_attrs)
-        left = relay.add(left, left_args[-3])
-
-        right = relay.nn.max_pool2d(add_op.args[1], strides=(2, 2))
-
-        out = relay.add(left, right)
-        data = relay.nn.relu(out)
-        # print("im here")
-        # print(data)
-        # print("==============================")
-                
-    return relay.nn.conv2d(data, weight, **new_attrs)
+                out = relay.add(left1, right1)
+                return out
 
 
 def alter_conv(attrs, inputs, tinfos, out_type):
