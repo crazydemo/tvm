@@ -19,6 +19,7 @@ from tvm.relay.op.contrib import dnnl
 from onnxruntime.backend.backend import OnnxRuntimeBackend as backend
 
 import numpy as np
+import time
 
 network_root_path = "/home2/zhangya9/onnx_models"
 network_dic = { "MobileNet-v2-1.0": "MobileNet/torch_model/mobilenetv2_torch.onnx",
@@ -217,9 +218,9 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
         print("Unsupported model type!")
 
     print("=============Optimizing===============")
-    # print(mod)
+    print(mod)
     processed_mod = partition_for_dnnl(mod, params, alter_layout=True)
-    # print(processed_mod)
+    print(processed_mod)
 
     print("=============Building===============")
     with tvm.transform.PassContext(opt_level=3):
@@ -243,7 +244,10 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     for i in range(batches+warmup):
         if i == warmup:
             tic = time.time()
+        starttime = time.time()
         rt_mod.run()
+        endtime = time.time()
+        print("exe time this run: %.8s s" % str(endtime-starttime))
         # print(rt_mod.profile())
     with_fuse_fps = batches * batch_size / (time.time() - tic)
     print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
@@ -254,7 +258,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="all",
+        default="densenet121",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")
