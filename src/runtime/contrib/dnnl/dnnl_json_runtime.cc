@@ -176,6 +176,63 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       // {"ODHWI64o", tag::Odhwi64o},
   };
 
+  std::map<std::string, tag> fix_layout_dict{
+      {"", tag::any},
+      {"NCW", tag::ncw},
+      {"NWC", tag::nwc},
+      {"OIW", tag::oiw},
+      {"GOIW", tag::goiw},
+      {"NCHW", tag::nchw},
+      {"NHWC", tag::nhwc},
+      {"OIHW", tag::oihw},
+      {"GOIHW", tag::goihw},
+      {"NCDHW", tag::ncdhw},
+      {"NDHWC", tag::ndhwc},
+      {"OIDHW", tag::oidhw},
+      {"GOIDHW", tag::goidhw},
+      {"IOHW", tag::iohw},
+      {"GIOHW", tag::giohw},
+      {"IODHW", tag::iodhw},
+      {"GIODHW", tag::giodhw},
+
+      // Blocking layout.
+      {"NCW8c", tag::nCw8c},
+      {"NCW16c", tag::nCw16c},
+      {"OIW8i8o", tag::OIw8i8o},
+      {"OIW16i16o", tag::OIw16i16o},
+      {"OWI8o", tag::Owi8o},
+      {"OWI16o", tag::Owi16o},
+      {"NCHW4c", tag::nChw4c},
+      {"NCHW8c", tag::nChw8c},
+      {"NCHW16c", tag::nChw16c},
+      {"OIHW8i8o", tag::OIhw8i8o},
+      {"IOHW8i8o", tag::any},
+      {"OIHW16i16o", tag::OIhw16i16o},
+      {"IOHW16i16o", tag::IOhw16i16o},
+      {"GOIHW4i4o", tag::gOIhw4i4o},
+      {"GOIHW8i8o", tag::gOIhw8i8o},
+      {"GOIHW16i16o", tag::gOIhw16i16o},
+      {"OHWI8o", tag::Ohwi8o},
+      {"OHWI16o", tag::Ohwi16o},
+      {"OHWI32o", tag::Ohwi32o},
+      {"OHWI48o", tag::Ohwi48o},
+      {"OHWI64o", tag::Ohwi64o},
+      {"GOIHW8g", tag::Goihw8g},
+      {"GOIHW16g", tag::Goihw16g},
+      {"NCDHW8c", tag::nCdhw8c},
+      {"NCDHW16c", tag::nCdhw16c},
+      {"OIDHW16i16o", tag::OIdhw16i16o},
+      {"IODHW16i16o", tag::IOdhw16i16o},
+      {"OIDHW8i8o", tag::OIdhw8i8o},
+      {"IODHW8i8o", tag::any},
+      {"ODHWI8o", tag::Odhwi8o},
+      {"ODHWI16o", tag::Odhwi16o},
+      {"ODHWI32o", tag::Odhwi32o},
+      {"ODHWI48o", tag::Odhwi48o},
+      {"ODHWI64o", tag::Odhwi64o},
+  };
+
+
   void ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
     // Define RegExp.
     std::regex sum_pat(".*_sum.*");
@@ -290,6 +347,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Binary(nid, dnnl::algorithm::binary_add);
         } else if ("multiply" == op_name) {
           Binary(nid, dnnl::algorithm::binary_mul);
+        } else if ("layout_transform" == op_name) {
+          Reorder(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -869,6 +928,45 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_args_.push_back({{DNNL_ARG_SRC_0, data_memories[0]},
                          {DNNL_ARG_SRC_1, data_memories[1]},
                          {DNNL_ARG_DST, out_memory}});
+  }
+
+  void Reorder(const size_t& nid) {
+    auto node = nodes_[nid];
+
+    auto data_entry = node.GetInputs()[0];
+    dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    std::string src_layout = node.GetAttr<std::vector<std::string>>("src_layout")[0];
+    std::string dst_layout = node.GetAttr<std::vector<std::string>>("dst_layout")[0];
+
+    // Check layout.
+    if (layout_dict.find(src_layout) == layout_dict.end()) {
+      // layout_dict.insert({src_layout, tag::any});
+      LOG(WARNING) << "Unregistered src layout for conv: " << src_layout;
+    }
+
+    if (layout_dict.find(dst_layout) == layout_dict.end()) {
+      // layout_dict.insert({kernel_layout, tag::any});
+      LOG(WARNING) << "Unregistered dst layout for conv: " << dst_layout;
+    }
+
+    dnnl::memory::dims src_dims = TransDims2Plain(shape, src_layout);
+
+    auto src_md = dnnl::memory::desc(src_dims, dt::f32, fix_layout_dict[src_layout]);
+    auto dst_md = dnnl::memory::desc(src_dims, dt::f32, fix_layout_dict[dst_layout]);
+
+    // Create primitive descriptor.
+    auto reorder_pd = dnnl::reorder::primitive_desc(
+            engine_, src_md, engine_, dst_md);
+
+    // Create the primitive.
+    auto reorder = dnnl::reorder(reorder_pd);
+    net_.push_back(reorder);
+
+    auto data_memory = BindDNNLMemory(data_entry, src_md);
+    JSONGraphNodeEntry out_entry(nid, 0);
+    auto out_memory = BindDNNLMemory(out_entry, dst_md);
+
+    net_args_.push_back({{DNNL_ARG_SRC, data_memory}, {DNNL_ARG_DST, out_memory}});
   }
 
   // Read from DNNL memory (+offset) and write to the handle.
