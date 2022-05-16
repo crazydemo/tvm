@@ -422,22 +422,29 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       }
     }
 
+    bool suit_winograd = weights_dims[2]==3 & weights_dims[3]==3
+                       & strides_dims[0]==1 & strides_dims[1]==1
+                       & dilates_dims[0]==0 & dilates_dims[1]==0
+                       & src_dims[2]!=224 & src_dims[2]!=299 & groups==1;
+
     // Memory descriptions.
-    auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, layout_dict[data_layout]);
-    auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, layout_dict[kernel_layout]);
+    auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, suit_winograd?tag::any:layout_dict[data_layout]);
+    auto conv_weights_md = dnnl::memory::desc(weights_dims, dt::f32, suit_winograd?tag::any:layout_dict[kernel_layout]);
     auto conv_bias_md = dnnl::memory::desc(bias_dims, dt::f32, tag::any);
     auto conv_dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::any);
 
+    dnnl::algorithm algo = suit_winograd ? dnnl::algorithm::convolution_winograd : dnnl::algorithm::convolution_direct;
     // Conv description.
     auto conv_desc =
         has_bias ? dnnl::convolution_forward::desc(
-                       dnnl::prop_kind::forward_inference, dnnl::algorithm::convolution_direct,
+                       dnnl::prop_kind::forward_inference, algo,
                        conv_src_md, conv_weights_md, conv_bias_md, conv_dst_md, strides_dims,
                        dilates_dims, padding_dims_l, padding_dims_r)
                  : dnnl::convolution_forward::desc(dnnl::prop_kind::forward_inference,
-                                                   dnnl::algorithm::convolution_direct, conv_src_md,
+                                                   algo, conv_src_md,
                                                    conv_weights_md, conv_dst_md, strides_dims,
                                                    dilates_dims, padding_dims_l, padding_dims_r);
+    
 
     // Enable elementwise post-ops.
     auto conv_prim_desc = dnnl::convolution_forward::primitive_desc(conv_desc, attr, engine_);
