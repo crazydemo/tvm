@@ -423,7 +423,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     bool suit_winograd = weights_dims[2]==3 & weights_dims[3]==3
                        & strides_dims[0]==1 & strides_dims[1]==1
                        & dilates_dims[0]==0 & dilates_dims[1]==0
-                       & src_dims[2]!=224 & src_dims[2]!=299 & groups==1;
+                       & src_dims[2]!=224 & src_dims[2]!=299 & groups==1
+                       & weights_dims[1]==448 & weights_dims[0]==384;
+    
+    suit_winograd = false;
 
     // Memory descriptions.
     auto conv_src_md = dnnl::memory::desc(src_dims, dt::f32, suit_winograd?tag::any:layout_dict[data_layout]);
