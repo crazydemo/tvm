@@ -41,6 +41,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <xmmintrin.h>
 
 // Whether use TVM runtime in header only mode.
 #ifndef TVM_RUNTIME_HEADER_ONLY
@@ -72,6 +73,7 @@ class PackedFuncObj : public Object {
    * \param args The arguments
    * \param rv The return value.
    */
+
   TVM_ALWAYS_INLINE void CallPacked(TVMArgs args, TVMRetValue* rv) const;
 
   static constexpr const uint32_t _type_index = TypeIndex::kRuntimePackedFunc;
@@ -149,6 +151,10 @@ class PackedFunc : public ObjectRef {
                 std::is_convertible<TCallable, std::function<void(TVMArgs, TVMRetValue*)>>::value &&
                 !std::is_base_of<TCallable, PackedFunc>::value>>
   explicit PackedFunc(TCallable data) {
+    //DAZ
+    _mm_setcsr( _mm_getcsr() | 0x0040 );
+    //FTZ
+    _mm_setcsr( _mm_getcsr() | 0x8000 );
     using ObjType = PackedFuncSubObj<TCallable>;
     data_ = make_object<ObjType>(std::forward<TCallable>(data));
   }
