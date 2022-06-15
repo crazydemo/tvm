@@ -284,12 +284,14 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Pooling(nid, dnnl::algorithm::pooling_avg);
         } else if (elt_name2algo.count(op_name)) {
           Eltwise(nid);
-        } else if ("nn.softmax" == op_name) {
+        } else if ("nn.softmax" == op_name || "dnnl.softmax" == op_name) {
           Softmax(nid);
         } else if ("add" == op_name) {
           Binary(nid, dnnl::algorithm::binary_add);
         } else if ("multiply" == op_name) {
           Binary(nid, dnnl::algorithm::binary_mul);
+        } else if ("concatenate" == op_name) {
+          Concat(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -867,6 +869,104 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     net_args_.push_back({{DNNL_ARG_SRC_0, data_memories[0]},
                          {DNNL_ARG_SRC_1, data_memories[1]},
                          {DNNL_ARG_DST, out_memory}});
+  }
+
+  // void Concat(const size_t& nid) {
+  //   auto node = nodes_[nid];
+
+  //   dnnl::memory::dim axis = std::stoi(node.GetAttr<std::string>("axis"));
+  //   std::cout<<"axis: "<<axis<<std::endl;
+
+  //   // Memory and compute description.
+  //   std::vector<dnnl::memory::dims> data_dims;
+  //   std::vector<dnnl::memory::desc> data_mds;
+  //   std::vector<dnnl::memory> data_memories;
+
+  //   for (auto entry : node.GetInputs()) {
+  //     auto data_shape = nodes_[entry.id_].GetOpShape()[entry.index_];
+  //     dnnl::memory::desc data_md = dnnl::memory::desc(data_shape, dt::f32, tag::nhwc);
+
+  //     data_dims.push_back(data_shape);
+  //     data_mds.push_back(data_md);
+  //     data_memories.push_back(BindDNNLMemory(entry, data_md));
+  //   }
+
+  //   auto concat_prim_desc = dnnl::concat::primitive_desc(axis, data_mds, engine_);
+
+  //   auto dst_mem = dnnl::memory(concat_prim_desc.dst_desc(), engine_);
+
+  //   auto concat = dnnl::concat(concat_prim_desc);
+
+  //   JSONGraphNodeEntry out_entry(nid, 0);
+  //   auto out_memory = BindDNNLMemory(out_entry, dst_mem);
+
+  //   net_.push_back(concat);
+
+  //   // std::unordered_map<int, dnnl::memory> concat_args;
+  //   // concat_args.insert({DNNL_ARG_SRC_0, data_mds[0]});
+  //   // concat_args.insert({DNNL_ARG_SRC_1, data_mds[1]});
+  //   // // for (int n = 0; n < node.GetInputs().size(); ++n)
+  //   // //     concat_args.insert({DNNL_ARG_MULTIPLE_SRC + n, data_mds[n]});
+  //   // concat_args.insert({DNNL_ARG_DST, dst_mem});
+
+  //   // net_args_.push_back(concat_args);
+  //   net_args_.push_back({{DNNL_ARG_SRC_0, data_mds[0]},
+  //                        {DNNL_ARG_SRC_1, data_mds[1]},
+  //                        {DNNL_ARG_DST, out_memory}});
+  // }
+
+  void Concat(const size_t& nid) {
+    auto node = nodes_[nid];
+
+    std::vector<dnnl::memory::desc> data_mds;
+    std::vector<dnnl::memory> data_memories;
+    
+    auto data_entry = node.GetInputs()[0];
+    dnnl::memory::dims shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    int axis = std::stoi(node.GetAttr<std::vector<std::string>>("axis")[0]); // axis
+    
+    if (axis < 0) {
+        ICHECK_LE(0 - axis, shape.size());
+        axis = shape.size() + axis;
+    }
+    else ICHECK_LT(axis, shape.size());
+    
+    for (auto entry : node.GetInputs()) {
+      auto data_shape = nodes_[entry.id_].GetOpShape()[entry.index_];
+      dnnl::memory::desc data_md = dnnl::memory::desc(data_shape, dt::f32, tag::nhwc);//GenDNNLMemDescByShape(data_shape, dt::f32);
+    //   if(data_shape.size()>4)
+    // {
+    //   auto data_format = tag::aBcd8b;
+    //   data_shape[1] = data_shape[1] * data_shape[data_shape.size()-1];
+    //   dnnl::memory::dims new_data_shape{1,2,3,4};
+    //   for(int i=0; i<new_data_shape.size(); i++)
+    //   {new_data_shape[i] = data_shape[i];}
+    //   data_shape = new_data_shape;
+    //   data_md = dnnl::memory::desc({data_shape, dt::f32, data_format});
+    // }
+      // for(auto i: data_shape){
+      //   std::cout<<i<<" ";
+      // }
+      // std::cout<<std::endl;
+      data_mds.push_back(data_md);
+      data_memories.push_back(BindDNNLMemory(entry, data_md));
+    }
+    
+    auto concat_prim_desc = dnnl::concat::primitive_desc(axis, data_mds, engine_);
+    // std::cout<<"concat"<<std::endl;
+    auto concat = dnnl::concat(concat_prim_desc);
+    net_.push_back(concat);
+    
+    auto out_md = concat_prim_desc.dst_desc();
+    JSONGraphNodeEntry out_entry(nid, 0);
+    auto out_memory = BindDNNLMemory(out_entry, out_md);
+
+    std::unordered_map<int, dnnl::memory> args;
+    for (int i = 0; i < (int)data_memories.size(); i++) {
+        args.insert({DNNL_ARG_MULTIPLE_SRC + i, data_memories[i]});
+    }
+    args.insert({DNNL_ARG_DST, out_memory});
+    net_args_.push_back(args);
   }
 
   // Read from DNNL memory (+offset) and write to the handle.

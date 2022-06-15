@@ -512,6 +512,9 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         std::vector<std::string> op_list = ParsingOpList(name);
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
         ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name.find("dnnl.softmax") != std::string::npos) {
+        call = GetRootCall(fn->body.as<CallNode>(), 4, {"max", "subtract", "exp", "sum", "divide"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;
       }

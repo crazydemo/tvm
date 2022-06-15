@@ -76,7 +76,7 @@ _register_external_op_helper("nn.conv3d")
 _register_external_op_helper("nn.conv2d_transpose")
 _register_external_op_helper("nn.conv3d_transpose")
 _register_external_op_helper("nn.dense")
-# _register_external_op_helper("nn.max_pool2d")
+_register_external_op_helper("nn.max_pool2d")
 # _register_external_op_helper("nn.avg_pool2d")
 # _register_external_op_helper("nn.max_pool3d")
 # _register_external_op_helper("nn.avg_pool3d")
@@ -94,6 +94,7 @@ _register_external_op_helper("nn.global_avg_pool2d")
 # _register_external_op_helper("nn.softmax")
 # _register_external_op_helper("add")
 # _register_external_op_helper("multiply")
+# _register_external_op_helper("concatenate")
 
 
 def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
@@ -123,6 +124,21 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     return conv_out
 
 
+def make_softmax():
+#       %100 = max(%99, axis=[1, 2, 3], keepdims=True) /* ty=Tensor[(128, 1, 1, 1), float32] */;
+#   %101 = subtract(%99, %100) /* ty=Tensor[(128, 1000, 1, 1), float32] */;
+#   %102 = exp(%101) /* ty=Tensor[(128, 1000, 1, 1), float32] */;
+#   %103 = sum(%102, axis=[1, 2, 3], keepdims=True) /* ty=Tensor[(128, 1, 1, 1), float32] */;
+#   divide(%102, %103) /* ty=Tensor[(128, 1000, 1, 1), float32] */
+    data = wildcard()
+    max_data = is_op("max")(data)
+    diff = is_op("subtract")(data, max_data)
+    exp_diff = is_op("exp")(diff)
+    sum_data = is_op("sum")(exp_diff)
+    out = is_op("divide")(exp_diff, sum_data)
+    return out
+
+
 def make_conv_add_sum_relu_pattern(conv_type):
     data1 = wildcard()
     weight = wildcard()
@@ -133,6 +149,7 @@ def make_conv_add_sum_relu_pattern(conv_type):
     out = is_op("add")(out, data2)
     out = is_op("nn.relu")(out)
     return out
+
 
 
 def make_dense_pattern(with_bias=True, with_eltwise=None):
@@ -210,6 +227,7 @@ def pattern_table():
     dnnl_patterns = [
         ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
         ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
+        # ("dnnl.softmax", make_softmax()),
     ]
     for with_bias in [True, False]:
         for elt in elt_list:

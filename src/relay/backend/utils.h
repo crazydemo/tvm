@@ -441,6 +441,8 @@ inline bool IsOp(const CallNode* call, const std::string& op_name) {
  */
 inline const CallNode* GetRootCall(const CallNode* current_call, int depth,
                                    const std::vector<std::string>& expected_op_names) {
+  // std::cout<<current_call->op<<std::endl;
+  // std::cout<<depth<<std::endl;
   ICHECK(current_call && depth >= 0 && static_cast<size_t>(depth) < expected_op_names.size() &&
          IsOp(current_call, expected_op_names[depth]));
 
@@ -454,6 +456,7 @@ inline const CallNode* GetRootCall(const CallNode* current_call, int depth,
          current_call->args[valid_node_idx].as<VarNode>()) {
     valid_node_idx++;
   }
+  if (IsOp(current_call, "subtract") || IsOp(current_call, "divide")) valid_node_idx = 1;
   const auto* next_call = current_call->args[valid_node_idx].as<CallNode>();
   return GetRootCall(next_call, depth - 1, expected_op_names);
 }
