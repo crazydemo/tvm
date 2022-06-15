@@ -74,12 +74,12 @@ def schedule_injective(outs):
         The computation schedule for the op.
     """
     outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
-    x = outs[0]
     s = te.create_schedule([x.op for x in outs])
     te.schedule.AutoInlineInjective(s)
-
-    if not is_empty_shape(x.shape):
-        schedule_injective_from_existing(s, x)
+    
+    for x in outs:
+        if not is_empty_shape(x.shape):
+            schedule_injective_from_existing(s, x)
     return s
 
 
@@ -117,18 +117,18 @@ def schedule_concatenate(outs):
                     sch[tensor].vectorize(inner_i)
 
     outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
-    x = outs[0]
     s = te.create_schedule([x.op for x in outs])
     te.schedule.AutoInlineInjective(s)
-    if len(s[x].op.axis) >= 5:
-        fused = s[x].fuse(s[x].op.axis[0], s[x].op.axis[1], s[x].op.axis[2])
-        vectorize(s, x, 64)
-        s[x].parallel(fused)
-    elif len(s[x].op.axis) >= 3:
-        fused = s[x].fuse(s[x].op.axis[0], s[x].op.axis[1])
-        s[x].parallel(fused)
-    else:
-        s[x].parallel(s[x].op.axis[0])
+    for x in outs:
+        if len(s[x].op.axis) >= 5:
+            fused = s[x].fuse(s[x].op.axis[0], s[x].op.axis[1], s[x].op.axis[2])
+            vectorize(s, x, 64)
+            s[x].parallel(fused)
+        elif len(s[x].op.axis) >= 3:
+            fused = s[x].fuse(s[x].op.axis[0], s[x].op.axis[1])
+            s[x].parallel(fused)
+        else:
+            s[x].parallel(s[x].op.axis[0])
     return s
 
 

@@ -218,7 +218,7 @@ def pattern_table():
     dnnl_patterns = [
         ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d")),
         ("dnnl.conv3d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv3d")),
-        ("dnnl.shuffle_channel", make_shuffle_channel_pattern()),
+        # ("dnnl.shuffle_channel", make_shuffle_channel_pattern()),
     ]
     for with_bias in [True, False]:
         for elt in elt_list:
