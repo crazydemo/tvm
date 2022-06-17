@@ -235,6 +235,19 @@ def run_and_verify_func(
     )
 
 
+def add_activation(activation, out, dic, param_lst):
+    if activation == "relu":
+        return relay.nn.relu(out), dic, param_lst
+    elif activation == "tanh":
+        return relay.tanh(out), dic, param_lst
+    elif activation == "sigmoid":
+        return relay.sigmoid(out), dic, param_lst
+    elif activation == "clip":
+        return relay.clip(out, 0.0, 6.0), dic, param_lst
+    else:
+        return out, dic, param_lst
+
+
 def get_conv1d(
     x_shape=((1, 3, 224)),
     k_shape=(16, 3, 3),
@@ -260,15 +273,7 @@ def get_conv1d(
     )
     dic = {"x": x_shape, "kernel": k_shape}
     param_lst = ["kernel"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv1d_bias(x_shape=(1, 3, 224), k_shape=(10, 3, 3), activation=None, dtype="float32"):
@@ -277,15 +282,7 @@ def get_conv1d_bias(x_shape=(1, 3, 224), k_shape=(10, 3, 3), activation=None, dt
     out = relay.nn.bias_add(conv, bias)
     dic["bias"] = (k_shape[0],)
     param_lst += ["bias"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv1d_bias_bn_relu(x_shape=(1, 3, 224), k_shape=(10, 3, 3), dtype="float32"):
@@ -332,15 +329,7 @@ def get_conv2d(
     )
     dic = {"x": x_shape, "kernel": k_shape}
     param_lst = ["kernel"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv2d_transpose(
@@ -365,15 +354,7 @@ def get_conv2d_transpose(
     )
     dic = {"x": x_shape, "kernel": k_shape}
     param_lst = ["kernel"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv2d_weights_const(
@@ -410,15 +391,7 @@ def get_conv2d_bias(
     out = relay.nn.bias_add(conv, bias)
     dic["bias"] = (k_shape[0],)
     param_lst += ["bias"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv2d_transpose_bias(
@@ -429,15 +402,7 @@ def get_conv2d_transpose_bias(
     out = relay.nn.bias_add(conv, bias)
     dic["bias"] = (k_shape[1],)
     param_lst += ["bias"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv2d_bias_bn_relu(x_shape=(1, 32, 8, 8), k_shape=(16, 32, 3, 3), dtype="float32"):
@@ -501,15 +466,7 @@ def get_conv3d(
     )
     dic = {"x": x_shape, "kernel": k_shape}
     param_lst = ["kernel"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv3d_transpose(
@@ -540,15 +497,7 @@ def get_conv3d_transpose(
     )
     dic = {"x": x_shape, "kernel": k_shape}
     param_lst = ["kernel"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv3d_bias(
@@ -559,15 +508,7 @@ def get_conv3d_bias(
     out = relay.nn.bias_add(conv, bias)
     dic["bias"] = (k_shape[0],)
     param_lst += ["bias"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def get_conv3d_transpose_bias(
@@ -578,15 +519,7 @@ def get_conv3d_transpose_bias(
     out = relay.nn.bias_add(conv, bias)
     dic["bias"] = (k_shape[1],)
     param_lst += ["bias"]
-
-    if activation == "relu":
-        return relay.nn.relu(out), dic, param_lst
-    elif activation == "tanh":
-        return relay.tanh(out), dic, param_lst
-    elif activation == "sigmoid":
-        return relay.sigmoid(out), dic, param_lst
-    else:
-        return out, dic, param_lst
+    return add_activation(activation, out, dic, param_lst)
 
 
 def gelu_helper(data):
@@ -743,7 +676,7 @@ def test_conv1d(run_module, dtype="float32"):
 def test_conv1d_pattern(run_module, dtype="float32"):
     x_shape = (1, 3, 224)
     k_shape = (16, 3, 3)
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv1d, dic, param_lst = get_conv1d(x_shape, k_shape, activation=a, dtype=dtype)
         conv1d = tvm.IRModule.from_expr(conv1d)
@@ -795,27 +728,27 @@ def test_conv2d_weights_const(run_module, dtype="float32"):
 def test_conv2d_pattern(run_module, dtype="float32"):
     x_shape = (1, 32, 8, 8)
     k_shape = (16, 32, 3, 3)
-    # activation_lst = [None, "relu", "tanh", "sigmoid"]
-    # for a in activation_lst:
-    #     conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
-    #     conv2d = tvm.IRModule.from_expr(conv2d)
-    #     config = conv2d, dic, param_lst
-    #     run_and_verify_func(config, run_module=run_module, dtype=dtype)
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
+    for a in activation_lst:
+        conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
+        conv2d = tvm.IRModule.from_expr(conv2d)
+        config = conv2d, dic, param_lst
+        run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    #     conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=a, dtype=dtype)
-    #     conv2d_bias = tvm.IRModule.from_expr(conv2d_bias)
-    #     config = conv2d_bias, dic, param_lst
-    #     run_and_verify_func(config, run_module=run_module, dtype=dtype)
+        conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=a, dtype=dtype)
+        conv2d_bias = tvm.IRModule.from_expr(conv2d_bias)
+        config = conv2d_bias, dic, param_lst
+        run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    # conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
-    # conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
-    # config = conv2d_bias_bn_relu, dic, param_lst
-    # run_and_verify_func(config, run_module=run_module, dtype=dtype)
+    conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
+    conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
+    config = conv2d_bias_bn_relu, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    # conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
-    # conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
-    # config = conv2d_bias_bn_relu, dic, param_lst
-    # run_and_verify_func(config, run_module=run_module, dtype=dtype)
+    conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
+    conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
+    config = conv2d_bias_bn_relu, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
     conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=None, dtype=dtype)
     conv2d_bias_sig = relay.sigmoid(conv2d_bias)
@@ -844,7 +777,7 @@ def test_conv2d_transpose(run_module, dtype="float32"):
 
 
 def test_conv2d_transpose_pattern(run_module, dtype="float32"):
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv2d, dic, param_lst = get_conv2d_transpose(activation=a, dtype=dtype)
         conv2d = tvm.IRModule.from_expr(conv2d)
@@ -877,7 +810,7 @@ def test_conv3d(run_module, dtype="float32"):
 
 
 def test_conv3d_pattern(run_module, dtype="float32"):
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv3d, dic, param_lst = get_conv3d(activation=a, dtype=dtype)
         conv3d = tvm.IRModule.from_expr(conv3d)
@@ -910,7 +843,7 @@ def test_conv3d_transpose(run_module, dtype="float32"):
 
 
 def test_conv3d_transpose_pattern(run_module, dtype="float32"):
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
+    activation_lst = [None, "relu", "tanh", "sigmoid", "clip"]
     for a in activation_lst:
         conv3d, dic, param_lst = get_conv3d_transpose(activation=a, dtype=dtype)
         conv3d = tvm.IRModule.from_expr(conv3d)
