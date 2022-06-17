@@ -136,16 +136,14 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"clip", dnnl::algorithm::eltwise_clip},
   };
 
-  bool ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
+  bool ParsingOpName(const std::string& op_name, dnnl::post_ops& ops) {
     // Define RegExp.
-    std::regex bias_add_pat(".*_bias.*");
     std::regex relu_pat(".*_relu.*");
     std::regex tanh_pat(".*_tanh.*");
     std::regex sigmoid_pat(".*_sigmoid.*");
     std::regex gelu_pat(".*_gelu.*");
 
     // Parsing post-ops.
-    dnnl::post_ops ops;
     if (std::regex_match(op_name, relu_pat)) {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 0.f);
     }
@@ -158,12 +156,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if (std::regex_match(op_name, gelu_pat)) {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu_erf, 0.f, 0.f);
     }
-    if (ops.len() != 0) {
-      attr.set_post_ops(ops);
-    }
-
-    // Parsing bias_add.
-    return std::regex_match(op_name, bias_add_pat) ? true : false;
+    return op_name.find("_bias") != std::string::npos;
   }
 
   // Build up the engine based on the input graph.
@@ -220,15 +213,21 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Convolution(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
+    dnnl::post_ops p_ops;
     dnnl::primitive_attr attr;
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    bool has_bias = ParsingOpName(op_name, attr);
+    ParsingOpName(op_name, p_ops);
+    bool has_bias = op_name.find("_bias") != std::string::npos;
+    bool has_sum = op_name.find("_sum") != std::string::npos; // should be fault for the current commit
 
     // Setup attributes.
     auto src_tr = GetInput(nid, 0);
     auto wgh_tr = GetInput(nid, 1);
     auto dst_tr = GetOutput(nid, 0);
-    auto bias_tr = has_bias ? GetInput(nid, 2) : GetInput(nid, -1);
+    auto add_eid = has_bias ? node_row_ptr_[node.GetInputs()[2].id_] + node.GetInputs()[2].index_ : -1;
+    auto add_tr = has_bias ? GetInput(nid, 2) : GetInput(nid, -1);
+    auto bias_tr = add_tr;
+    auto sum_tr = add_tr;
     auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
     auto dilates = GetNodeAttr<std::vector<int64_t>>(node, "dilation");
     auto padding = GetNodeAttr<std::vector<int64_t>>(node, "padding");
@@ -260,7 +259,20 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     }
 
     // Assumption that bias is correct and can be squeezed to 1D
-    bias_tr = bias_tr.Reshape({dst_tr.dims()[1]});
+    try
+    {
+      add_tr = add_tr.Reshape({dst_tr.dims()[1]});
+      has_bias = true;
+      bias_tr = add_tr;
+    }
+    catch(const std::exception& e)
+    {
+      has_bias = false;
+      bias_tr = GetInput(nid, -1);
+      has_sum = true;
+      p_ops.append_sum(1.f);
+      TensorRequisite::AsIs(dst_tr.desc(), add_eid);
+    }
 
     // TODO(@apeskov): This is WA. In case of padded blocked tensor format we do not know original
     //  shapes. Example tensor {1, 10, 224, 224} with layout "NCNH8c" will lead to tensor
@@ -287,6 +299,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         dst_tr.LayoutAny().desc(), strides, dilates, padding_l, padding_r);
 
     // Enable elementwise post-ops.
+    if (p_ops.len() != 0) {
+      attr.set_post_ops(p_ops);
+    }
     auto conv_prim_desc = dnnl::convolution_forward::primitive_desc(conv_desc, attr, engine_);
 
     src_tr = src_tr.RequestLayout(conv_prim_desc.src_desc());
@@ -306,9 +321,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Deconvolution(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
+    dnnl::post_ops p_ops;
     dnnl::primitive_attr attr;
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    bool has_bias = ParsingOpName(op_name, attr);
+    bool has_bias = ParsingOpName(op_name, p_ops);
 
     // Setup attributes.
     auto src_tr = GetInput(nid, 0);
@@ -360,6 +376,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         dst_tr.LayoutAny().desc(), strides, dilates, padding_l, padding_r);
 
     // Enable elementwise post-ops.
+    if (p_ops.len() != 0) {
+      attr.set_post_ops(p_ops);
+    }
     auto deconv_prim_desc = dnnl::deconvolution_forward::primitive_desc(deconv_desc, attr, engine_);
 
     src_tr = src_tr.RequestLayout(deconv_prim_desc.src_desc());
@@ -379,9 +398,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Dense(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
+    dnnl::post_ops p_ops;
     dnnl::primitive_attr attr;
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    bool has_bias = ParsingOpName(op_name, attr);
+    bool has_bias = ParsingOpName(op_name, p_ops);
 
     // Setup attributes.
     auto src_tr = GetInput(nid, 0);
@@ -398,6 +418,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         bias_tr.LayoutAny().desc(), dst_tr.LayoutAny().desc());
 
     // Enable elementwise post-ops.
+    if (p_ops.len() != 0) {
+      attr.set_post_ops(p_ops);
+    }
     auto dense_prim_desc = dnnl::inner_product_forward::primitive_desc(dense_desc, attr, engine_);
 
     src_tr = src_tr.RequestLayout(dense_prim_desc.src_desc());
