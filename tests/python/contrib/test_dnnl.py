@@ -795,26 +795,33 @@ def test_conv2d_weights_const(run_module, dtype="float32"):
 def test_conv2d_pattern(run_module, dtype="float32"):
     x_shape = (1, 32, 8, 8)
     k_shape = (16, 32, 3, 3)
-    activation_lst = [None, "relu", "tanh", "sigmoid"]
-    for a in activation_lst:
-        conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
-        conv2d = tvm.IRModule.from_expr(conv2d)
-        config = conv2d, dic, param_lst
-        run_and_verify_func(config, run_module=run_module, dtype=dtype)
+    # activation_lst = [None, "relu", "tanh", "sigmoid"]
+    # for a in activation_lst:
+    #     conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
+    #     conv2d = tvm.IRModule.from_expr(conv2d)
+    #     config = conv2d, dic, param_lst
+    #     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-        conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=a, dtype=dtype)
-        conv2d_bias = tvm.IRModule.from_expr(conv2d_bias)
-        config = conv2d_bias, dic, param_lst
-        run_and_verify_func(config, run_module=run_module, dtype=dtype)
+    #     conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=a, dtype=dtype)
+    #     conv2d_bias = tvm.IRModule.from_expr(conv2d_bias)
+    #     config = conv2d_bias, dic, param_lst
+    #     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
-    conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
-    config = conv2d_bias_bn_relu, dic, param_lst
-    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+    # conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
+    # conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
+    # config = conv2d_bias_bn_relu, dic, param_lst
+    # run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
-    conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
-    conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
-    config = conv2d_bias_bn_relu, dic, param_lst
+    # conv2d_bias_bn_relu, dic, param_lst = get_conv2d_bias_bn_relu(x_shape, k_shape, dtype=dtype)
+    # conv2d_bias_bn_relu = tvm.IRModule.from_expr(conv2d_bias_bn_relu)
+    # config = conv2d_bias_bn_relu, dic, param_lst
+    # run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+    conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=None, dtype=dtype)
+    conv2d_bias_sig = relay.sigmoid(conv2d_bias)
+    conv2d_bias_swish = relay.multiply(conv2d_bias, conv2d_bias_sig)
+    conv2d_bias_swish = tvm.IRModule.from_expr(conv2d_bias_swish)
+    config = conv2d_bias_swish, dic, param_lst
     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
