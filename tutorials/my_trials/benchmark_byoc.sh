@@ -1,6 +1,6 @@
 #!/bin/bash -x
 
-record_root="/home2/zhangya9/tvm/tutorials/bench_openvino"
+record_root="/home2/zhangya9/tvm/tutorials/bench_openvino_upstream"
 target='llvm -mcpu=cascadelake -model=platinum-8280'
 dtype='float32'
 
@@ -19,11 +19,11 @@ dtype='float32'
 # "wide_resnet50_2"
 # "resnest50"
 
-network_list=('vgg16')   # 'anti-spoof-mn3')
+network_list=('densenet121')   # 'anti-spoof-mn3')
 cores_list=('28') #('28' '28' '4')    # multi-instances should be the last one
 batch_list=('1') #('1' '128' '1')
 
-repeat=100
+repeat=20
 physical_cores=28
 
 for i in $(seq 1 ${#cores_list[@]}); do
@@ -41,7 +41,7 @@ for i in $(seq 1 ${#cores_list[@]}); do
         for j in $(seq 0 $[${num_groups}-1]); do
             start_core=$[${j}*${num_cores}]
             end_core=$[$[${j}+1]*${num_cores}-1]
-            # benchmark_log="${log_root}/${num_cores}cores_bs${batch_size}_cores${start_core}-${end_core}.log"
+            benchmark_log="${log_root}/${num_cores}cores_bs${batch_size}_cores${start_core}-${end_core}.log"
             # benchmark_log="${log_root}/dnnl_verbose.log"
             printf "=%.0s" {1..100}; echo
             echo "benchmarking autoscheduler using ${network} with ${num_cores} cores and batchsize=${batch_size} on cores: ${start_core}-${end_core}"
@@ -55,9 +55,9 @@ for i in $(seq 1 ${#cores_list[@]}); do
                     --batch_size=${batch_size} \
                     --target="${target}" \
                     --dtype=${dtype} \
-                    --warmup=20 \
-                    --batches=${repeat} #\
-                    # | tee ${benchmark_log} 2>&1
+                    --warmup=5 \
+                    --batches=${repeat} \
+                    | tee ${benchmark_log} 2>&1
                 echo "done benchmarking autoscheduler using ${network} with ${num_cores} cores and batchsize=${batch_size} on cores: ${start_core}-${end_core}"
             else
                 numactl --physcpubind=${start_core}-${end_core} --membind=0 \
@@ -66,7 +66,8 @@ for i in $(seq 1 ${#cores_list[@]}); do
                     --batch_size=${batch_size} \
                     --target="${target}" \
                     --dtype=${dtype} \
-                    --warmup=20 \
+                    --warmup=1 \
+                    --check_acc=0 \
                     --batches=${repeat} \
                     | tee ${benchmark_log} 2>&1 &
             fi

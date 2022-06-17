@@ -234,7 +234,7 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     rt_mod.set_input(**params)
 
     print("=============Checking accuracy===============")
-    if check_acc:
+    if check_acc and batch_size==1:
         onnx_output = list(backend.run_model(onnx_model, sample))
         rt_mod.run()
         tvm_output = rt_mod.get_output(0)
@@ -244,10 +244,10 @@ def benchmark(network, batch_size, profiling=False, check_acc=False, warmup=100,
     for i in range(batches+warmup):
         if i == warmup:
             tic = time.time()
-        starttime = time.time()
+        # starttime = time.time()
         rt_mod.run()
-        endtime = time.time()
-        print("exe time this run: %.8s s" % str(endtime-starttime))
+        # endtime = time.time()
+        # print("exe time this run: %.8s s" % str(endtime-starttime))
         # print(rt_mod.profile())
     with_fuse_fps = batches * batch_size / (time.time() - tic)
     print("{}: with_fuse_fps: {:.4f} fps".format(network, with_fuse_fps))
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="resnext50_32x4d",
+        default="vgg16",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")
