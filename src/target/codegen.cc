@@ -36,11 +36,17 @@
 #include <sstream>
 #include <unordered_set>
 #include <vector>
+#include <xmmintrin.h>
 
 namespace tvm {
 namespace codegen {
 
 runtime::Module Build(IRModule mod, Target target) {
+  std::cout<<"+++++++++++++Codegen Build++++++++++++"<<std::endl;
+      //DAZ
+    _mm_setcsr( _mm_getcsr() | 0x0040 );
+    //FTZ
+    _mm_setcsr( _mm_getcsr() | 0x8000 );
   if (transform::PassContext::Current()
           ->GetConfig<Bool>("tir.disable_assert", Bool(false))
           .value()) {
