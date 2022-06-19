@@ -117,6 +117,9 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
             )
             with tvm.transform.PassContext(opt_level=3):
                 mod = seq(mod)
+
+    mod = dnnl.rewrite_resnetv1(mod)
+
     if alter_layout:
         with TempOpAttr("nn.conv1d", "FTVMAlterOpLayout", dnnl.alter_conv):
             with TempOpAttr("nn.conv2d", "FTVMAlterOpLayout", dnnl.alter_conv):
@@ -258,7 +261,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="vgg16",
+        default="resnet50-v1",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")
