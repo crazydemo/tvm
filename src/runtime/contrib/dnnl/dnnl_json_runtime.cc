@@ -136,7 +136,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"clip", dnnl::algorithm::eltwise_clip},
   };
 
-  bool ParsingOpName(const std::string op_name, dnnl::primitive_attr attr) {
+  bool ParsingOpName(const JSONGraphNode& node, const std::string op_name, dnnl::primitive_attr attr) {
     // Define RegExp.
     std::regex bias_add_pat(".*_bias.*");
     std::regex relu_pat(".*_relu.*");
@@ -161,7 +161,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       }
     }
     if (std::regex_match(op_name, clip_pat)) {
-      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_clip, 0.f, 6.f);
+      float a_min = GetNodeAttr<float>(node, "a_min");
+      float a_max = GetNodeAttr<float>(node, "a_max");
+      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_clip, a_min, a_max);
     }
     if (std::regex_match(op_name, gelu_pat)) {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu_erf, 0.f, 0.f);
@@ -230,7 +232,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto op_name = node.GetOpName();
     dnnl::primitive_attr attr;
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    bool has_bias = ParsingOpName(op_name, attr);
+    bool has_bias = ParsingOpName(node, op_name, attr);
 
     // Setup attributes.
     auto src_tr = GetInput(nid, 0);
@@ -319,7 +321,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto op_name = node.GetOpName();
     dnnl::primitive_attr attr;
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    bool has_bias = ParsingOpName(op_name, attr);
+    bool has_bias = ParsingOpName(node, op_name, attr);
 
     // Setup attributes.
     auto src_tr = GetInput(nid, 0);
@@ -392,7 +394,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto op_name = node.GetOpName();
     dnnl::primitive_attr attr;
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    bool has_bias = ParsingOpName(op_name, attr);
+    bool has_bias = ParsingOpName(node, op_name, attr);
 
     // Setup attributes.
     auto src_tr = GetInput(nid, 0);

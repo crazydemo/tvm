@@ -529,6 +529,12 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
                                                 "kernel", /* op_type_ */
                                                 inputs, 1 /* num_outputs_ */);
     SetCallNodeAttribute(node, call);
+    // If has post-op `clip`. Assume the last op is clip, add clip's attrs to the pattern attrs.
+    if (name.find("_clip") != std::string::npos) {
+      auto clip_call = cn->op.as<FunctionNode>()->body.as<CallNode>();
+      ICHECK(IsOp(clip_call, "clip"));
+      SetCallNodeAttribute(node, clip_call);
+    }
     return AddNode(node, GetRef<Expr>(cn));
   }
 };
