@@ -96,27 +96,28 @@ def partition_for_dnnl(mod, params=None, alter_layout=True):
 
     with TempOpAttr("nn.conv2d", "FTVMLegalize", dnnl.legalize_group_conv):
         with TempOpAttr("nn.conv2d_transpose", "FTVMLegalize", dnnl.legalize_group_conv):
-            seq = tvm.transform.Sequential(
-                [
-                    # tvm.transform.PrintIR(),
-                    transform.CanonicalizeOps(),
-                    transform.InferType(),
-                    transform.SimplifyInference(),
-                    transform.FoldConstant(),
-                    transform.FoldScaleAxis(),
-                    # tvm.transform.PrintIR(),
-                    # fold consecutive add ops to simplify pattern `conv2d-bias_add-bn-relu`
-                    transform.SimplifyExpr(),
-                    transform.FoldConstant(),
-                    # tvm.transform.PrintIR(),
-                    # alter group conv /conv_transpose layout to `GOIHW` / `GIOHW`
-                    transform.Legalize(),
-                    transform.FoldConstant(),
-                    # tvm.transform.PrintIR(),
-                ]
-            )
-            with tvm.transform.PassContext(opt_level=3):
-                mod = seq(mod)
+            with TempOpAttr("nn.avg_pool2d", "FTVMLegalize", dnnl.legalize_pad_avg_pool):
+                seq = tvm.transform.Sequential(
+                    [
+                        # tvm.transform.PrintIR(),
+                        transform.CanonicalizeOps(),
+                        transform.InferType(),
+                        transform.SimplifyInference(),
+                        transform.FoldConstant(),
+                        transform.FoldScaleAxis(),
+                        # tvm.transform.PrintIR(),
+                        # fold consecutive add ops to simplify pattern `conv2d-bias_add-bn-relu`
+                        transform.SimplifyExpr(),
+                        transform.FoldConstant(),
+                        # tvm.transform.PrintIR(),
+                        # alter group conv /conv_transpose layout to `GOIHW` / `GIOHW`
+                        transform.Legalize(),
+                        transform.FoldConstant(),
+                        # tvm.transform.PrintIR(),
+                    ]
+                )
+                with tvm.transform.PassContext(opt_level=3):
+                    mod = seq(mod)
 
     mod = dnnl.rewrite_resnetv1(mod)
 
@@ -261,7 +262,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--network",
         type=str,
-        default="resnet50-v1",
+        default="inception_v3",
         help="The name of the neural network.",
     )
     parser.add_argument("--batch_size", type=int, default=1, help="The batch size")

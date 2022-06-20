@@ -75,31 +75,31 @@ def _register_external_op_helper(op_name, supported=True):
     return _func_wrapper
 
 
-# _register_external_op_helper("nn.batch_norm")
+_register_external_op_helper("nn.batch_norm")
 _register_external_op_helper("nn.conv1d")
 _register_external_op_helper("nn.conv2d")
 _register_external_op_helper("nn.conv3d")
 _register_external_op_helper("nn.conv2d_transpose")
 _register_external_op_helper("nn.conv3d_transpose")
 _register_external_op_helper("nn.dense")
-# _register_external_op_helper("nn.max_pool2d")
-# _register_external_op_helper("nn.avg_pool2d")
-# _register_external_op_helper("nn.global_avg_pool2d")
-# _register_external_op_helper("nn.max_pool3d")
-# _register_external_op_helper("nn.avg_pool3d")
-# _register_external_op_helper("abs")
-# _register_external_op_helper("clip")
-# _register_external_op_helper("exp")
-# _register_external_op_helper("log")
-# _register_external_op_helper("sqrt")
-# _register_external_op_helper("nn.relu")
-# _register_external_op_helper("nn.leaky_relu")
-# _register_external_op_helper("tanh")
-# _register_external_op_helper("sigmoid")
-# _register_external_op_helper("nn.softmax")
-# _register_external_op_helper("add")
-# _register_external_op_helper("multiply")
-# _register_external_op_helper("nn.layer_norm")
+_register_external_op_helper("nn.max_pool2d")
+_register_external_op_helper("nn.avg_pool2d")
+_register_external_op_helper("nn.global_avg_pool2d")
+_register_external_op_helper("nn.max_pool3d")
+_register_external_op_helper("nn.avg_pool3d")
+_register_external_op_helper("abs")
+_register_external_op_helper("clip")
+_register_external_op_helper("exp")
+_register_external_op_helper("log")
+_register_external_op_helper("sqrt")
+_register_external_op_helper("nn.relu")
+_register_external_op_helper("nn.leaky_relu")
+_register_external_op_helper("tanh")
+_register_external_op_helper("sigmoid")
+_register_external_op_helper("nn.softmax")
+_register_external_op_helper("add")
+_register_external_op_helper("multiply")
+_register_external_op_helper("nn.layer_norm")
 
 
 def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
@@ -388,8 +388,8 @@ def tag2layout(input_data, is_weight=False, conv_type="Conv1D"):
 
 
 def legalize_pad_avg_pool(attrs, inputs, types):
-    """Legalize group conv / conv_transpose calculation.
-    Alter weight layout from OIHW to GOIHW / IOHW to GIOHW"""
+    """Legalize pattern pad->avg_pool.
+    fuse pad->avg_pool into avg_pool with new attrs"""
     data = inputs[0]
     if isinstance(data, relay.expr.Call) and data.op.name == "nn.pad":
         new_attrs = dict(attrs)
