@@ -106,6 +106,8 @@ _register_external_op_helper("add")
 _register_external_op_helper("multiply")
 _register_external_op_helper("nn.layer_norm")
 
+supported_post_elts = ["nn.relu", "tanh", "sigmoid", "clip", "gelu", "swish", None]
+
 
 def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     """Create patterns related to conv and conv_transpose.
@@ -121,6 +123,9 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     conv_out : CallPattern
         Call node sequence.
     """
+    if with_eltwise not in supported_post_elts:
+        raise ValueError("Unsupport post elemenwise activation: %s" % with_eltwise)
+
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
@@ -151,10 +156,12 @@ def make_dense_pattern(with_bias=True, with_eltwise=None):
     dense_out : CallPattern
         Call node sequence.
     """
+    if with_eltwise not in supported_post_elts:
+        raise ValueError("Unsupport post elemenwise activation: %s" % with_eltwise)
+
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
-
     dense = is_op("nn.dense")(data, weight)
     if with_bias:
         dense_out = is_op("add")(dense, bias)
