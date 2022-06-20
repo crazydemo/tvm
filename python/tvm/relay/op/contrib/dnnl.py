@@ -124,7 +124,7 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
         Call node sequence.
     """
     if with_eltwise not in supported_post_elts:
-        raise ValueError("Unsupport post elemenwise activation: %s" % with_eltwise)
+        raise ValueError("Unsupported eltwise post-op: %s" % with_eltwise)
 
     data = wildcard()
     weight = wildcard()
@@ -157,7 +157,7 @@ def make_dense_pattern(with_bias=True, with_eltwise=None):
         Call node sequence.
     """
     if with_eltwise not in supported_post_elts:
-        raise ValueError("Unsupport post elemenwise activation: %s" % with_eltwise)
+        raise ValueError("Unsupported eltwise post-op: %s" % with_eltwise)
 
     data = wildcard()
     weight = wildcard()
@@ -446,7 +446,7 @@ def tag2layout(input_data, is_weight=False, conv_type="Conv1D"):
         elif i.isdigit():
             res += i
         else:
-            raise ValueError("Unsupport layout format: %s" % input_data)
+            raise ValueError("Unsupported layout format: %s" % input_data)
 
     return res
 
@@ -846,6 +846,7 @@ class ResNetV1Rewrite(DFPatternCallback):
     
     %46 = add(%44, %45) /* ty=Tensor[(1, 512, 28, 28), float32] */;
     %47 = nn.relu(%46) /* ty=Tensor[(1, 512, 28, 28), float32] */;
+
     Pattern #2:
     %26 = nn.conv2d(%25, meta[relay.Constant][16] /* ty=Tensor[(64, 256, 1, 1), float32] */, padding=[0, 0, 0, 0], channels=64, kernel_size=[1, 1]);
     %27 = add(%26, meta[relay.Constant][17] /* ty=Tensor[(64, 1, 1), float32] */);
@@ -879,7 +880,6 @@ class ResNetV1Rewrite(DFPatternCallback):
 
     def __init__(self):
         super(ResNetV1Rewrite, self).__init__()
-        self.cnt = 0
         self.attr_lst = []
         self.data = wildcard()
         self.w1, self.b1 = wildcard(), wildcard()
@@ -931,7 +931,6 @@ class ResNetV1Rewrite(DFPatternCallback):
         _analysis.post_order_visit(pre, visit_func)
 
     def callback(self, pre, post, node_map):
-        # print(pre)
         self.get_attr(pre)
         data = node_map[self.data][0]
         w1, b1 = node_map[self.w1][0], node_map[self.b1][0]
@@ -986,9 +985,7 @@ class ResNetV1Rewrite(DFPatternCallback):
         return out
 
 def rewrite_resnetv1(mod):
-    """Rewrite the input graph to reorder reshape operators so that
-    we can perform dense_bias_gelu/dense_bias fusion and then offload
-    them to byoc part.
+    """Rewrite the the ResNetV1 downsize block to reduce the computation complexity.
     """
     mod["main"] = rewrite(ResNetV1Rewrite(), mod["main"]
     )
