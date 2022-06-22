@@ -220,6 +220,47 @@ const tvm::relay::CallNode* ParseQnnDenseComp(const tvm::relay::FunctionNode& co
   return memo.at(dns)[0].as<CallNode>();
 }
 
+const tvm::relay::CallNode* ParseConvComp(const tvm::relay::FunctionNode& comp_fn,
+                                             std::unordered_map<std::string, dmlc::any>* ext_attrs,
+                                             std::vector<tvm::relay::Expr>* args) {
+  using namespace tvm::relay;
+
+  // Pattern
+  auto src = IsWildcard();
+  auto wgh = IsWildcard();
+  auto sum_src = IsWildcard();
+  auto bias = IsWildcard();
+
+  DFPattern cnv;
+  DFPattern pat;
+
+  cnv = IsOp("nn.conv2d")({src, wgh, IsConstant(), IsConstant(), IsConstant(), IsConstant()});
+  pat = IsOp("add")({pat, bias});
+  pat = IsOp("add")({pat, sum_src});
+  pat = IsOp("nn.relu")({pat});
+
+  // Check pattern match
+  auto indexed_body = CreateIndexedGraph(comp_fn.body);
+  DFPatternMatcher matcher(indexed_body.get());
+  auto res = matcher.Match(pat, comp_fn.body);
+  ICHECK(res) << "Mismatch of DNNL partitioner and codegen logic";
+
+  // Handle arguments in deterministic order
+  auto map = matcher.GetMemo();
+  auto find = [&map](const DFPattern& pat) -> tvm::relay::Expr {
+    if (map.count(pat)) return map.at(pat)[0];
+    return {};
+  };
+
+  ArgPacker arg_holder(ext_attrs, args);
+  arg_holder.Put(find(src));
+  arg_holder.Put(find(wgh));
+  arg_holder.Put(find(bias), "bias_idx");
+  arg_holder.Put(find(sum_src), "sum_idx");
+
+  return map.at(cnv)[0].as<CallNode>();
+}
+
 /*!
  * Parse composite function and return real args, additional attributes and root call node
  * @param comp_fn composite function to parse
@@ -239,6 +280,8 @@ const tvm::relay::CallNode* ParseComposite(const tvm::relay::FunctionNode& comp_
     res = ParseQnnConvComp(comp_fn, ext_attrs, args);
   else if (name == "dnnl.qnn.dense")
     res = ParseQnnDenseComp(comp_fn, ext_attrs, args);
+  // else if (name == "dnnl.conv2d_bias_sum_relu")
+  //   res = ParseConvComp(comp_fn, ext_attrs, args);
   return res;
 }
 

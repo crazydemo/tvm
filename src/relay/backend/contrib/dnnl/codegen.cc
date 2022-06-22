@@ -467,6 +467,7 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
 
   std::map<std::string, std::string> op_map{
       {"bias", "add"},
+      {"sum", "add"},
       {"relu", "nn.relu"},
       {"tanh", "tanh"},
       {"sigmoid", "sigmoid"},
@@ -532,6 +533,10 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         std::vector<std::string> op_list = ParsingOpList(name);
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
         ICHECK(call->op.as<OpNode>()) << "Not op node";
+      // } else if (name == "dnnl.conv2d_bias_sum_relu") {
+      //   std::vector<Expr> args_loc;
+      //   call = ParseComposite(*fn, &extra_attrs, &args_loc);
+      //   args = BindToCallNodeArgs(args_loc, cn);
       } else if (name.find("dnnl.conv2d") != std::string::npos) {
         std::vector<std::string> op_list = ParsingOpList(name);
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);

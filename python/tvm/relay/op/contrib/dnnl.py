@@ -32,7 +32,9 @@ it is supported. For example:
 - The other way is to implement the function by themselves to
 check the attributes of the op and decide if it should be offloaded to DNNL.
 """
+from doctest import FAIL_FAST
 import logging
+from pickle import TRUE
 
 import tvm.ir
 from tvm import relay
@@ -51,6 +53,8 @@ from .register import register_pattern_table
 
 
 logger = logging.getLogger("DNNL")
+K_ELEMWISE = 0
+K_BROADCAST = 1
 
 
 def _register_external_op_helper(op_name, supported=True):
@@ -79,32 +83,32 @@ def _register_external_op_helper(op_name, supported=True):
     return _func_wrapper
 
 
-_register_external_op_helper("nn.batch_norm")
+# _register_external_op_helper("nn.batch_norm")
 _register_external_op_helper("nn.conv1d")
 _register_external_op_helper("nn.conv2d")
 _register_external_op_helper("nn.conv3d")
 _register_external_op_helper("nn.conv2d_transpose")
 _register_external_op_helper("nn.conv3d_transpose")
 _register_external_op_helper("nn.dense")
-_register_external_op_helper("nn.max_pool2d")
-_register_external_op_helper("nn.avg_pool2d")
+# _register_external_op_helper("nn.max_pool2d")
+# _register_external_op_helper("nn.avg_pool2d")
 _register_external_op_helper("nn.global_avg_pool2d")
-_register_external_op_helper("nn.max_pool3d")
-_register_external_op_helper("nn.avg_pool3d")
-_register_external_op_helper("abs")
-_register_external_op_helper("clip")
-_register_external_op_helper("exp")
-_register_external_op_helper("log")
-_register_external_op_helper("sqrt")
-_register_external_op_helper("round")
-_register_external_op_helper("nn.relu")
-_register_external_op_helper("nn.leaky_relu")
-_register_external_op_helper("tanh")
-_register_external_op_helper("sigmoid")
-_register_external_op_helper("nn.softmax")
-_register_external_op_helper("add")
-_register_external_op_helper("multiply")
-_register_external_op_helper("nn.layer_norm")
+# _register_external_op_helper("nn.max_pool3d")
+# _register_external_op_helper("nn.avg_pool3d")
+# _register_external_op_helper("abs")
+# _register_external_op_helper("clip")
+# _register_external_op_helper("exp")
+# _register_external_op_helper("log")
+# _register_external_op_helper("sqrt")
+# _register_external_op_helper("round")
+# _register_external_op_helper("nn.relu")
+# _register_external_op_helper("nn.leaky_relu")
+# _register_external_op_helper("tanh")
+# _register_external_op_helper("sigmoid")
+# _register_external_op_helper("nn.softmax")
+# _register_external_op_helper("add")
+# _register_external_op_helper("multiply")
+# _register_external_op_helper("nn.layer_norm")
 
 supported_post_elts = ["nn.relu", "tanh", "sigmoid", "clip", "gelu", "swish", None]
 
@@ -140,6 +144,19 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     elif with_eltwise:
         conv_out = is_op(with_eltwise)(conv_out)
     return conv_out
+
+
+def make_conv_add_sum_relu_pattern(conv_type, has_relu=True):
+    data1 = wildcard()
+    weight = wildcard()
+    bias = wildcard()
+    data2 = wildcard()
+    out = is_op(conv_type)(data1, weight)
+    out = is_op("add")(out, bias)
+    out = is_op("add")(out, data2)
+    if has_relu:
+        out = is_op("nn.relu")(out)
+    return out
 
 
 def make_dense_pattern(with_bias=True, with_eltwise=None):
@@ -296,6 +313,8 @@ def pattern_table():
     dnnl_patterns = list()
     dnnl_patterns.append(make_qnn_conv2d_pattern())
     dnnl_patterns.append(make_qnn_dense_pattern())
+    dnnl_patterns.append(("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d"))),
+    dnnl_patterns.append(("dnnl.conv2d_bias_sum", make_conv_add_sum_relu_pattern("nn.conv2d"))),
 
     elt_list = ["nn.relu", "tanh", "sigmoid", "clip", "gelu", "swish", None]
     for with_bias in [True, False]:

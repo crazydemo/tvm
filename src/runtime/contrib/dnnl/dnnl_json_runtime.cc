@@ -139,6 +139,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   dnnl::primitive_attr ParseAttrs(const size_t& nid, TensorRequisite* bias_tr) {
     dnnl::primitive_attr attr;
+    // parsing of name to extract attributes
+    auto op_name = nodes_[nid].GetOpName();
 
     // Post op attributes based on named inputs.
     auto dst_zp_tr = GetInputByName(nid, "dst_zp_idx");
@@ -168,6 +170,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       auto ops = attr.get_post_ops();
       ops.append_sum(scl);
       attr.set_post_ops(ops);
+    } else if (op_name.find("_sum") != std::string::npos) {
+      auto ops = attr.get_post_ops();
+      ops.append_sum(1.f);
+      attr.set_post_ops(ops);
     }
 
     if (dst_zp_tr) {
@@ -182,8 +188,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     if (o_scl_tr || activation[0] != "none" || sum_scl_tr || dst_zp_tr) return attr;
 
-    // parsing of name to extract attributes
-    auto op_name = nodes_[nid].GetOpName();
+    
     // Define RegExp.
     std::regex bias_add_pat(".*_bias.*");
     std::regex relu_pat(".*_relu.*");
@@ -193,7 +198,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::regex gelu_pat(".*_gelu.*");
 
     // Parsing post-ops.
-    dnnl::post_ops ops;
+    auto ops = attr.get_post_ops();
     if (std::regex_match(op_name, relu_pat)) {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 0.f);
     }
@@ -278,6 +283,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   void Convolution(const size_t& nid) {
     auto node = nodes_[nid];
+    auto op_name = nodes_[nid].GetOpName();
 
     // Setup attributes.
     auto src_tr = GetInput(nid, 0);
@@ -360,6 +366,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // TODO(@apeskov): Simulation of inplace primitive. just as PoC.
     auto sum_in_tr = GetInputByName(nid, "sum_idx").TreatAs(dst_layout);
+    if (op_name.find("_sum") != std::string::npos) {
+      sum_in_tr = GetInput(nid, node.GetInputs().size()-1);
+      sum_in_tr = sum_in_tr.TreatAs(dst_layout);
+    }
 
     Submit(dnnl::convolution_forward(conv_prim_desc),
            {{DNNL_ARG_SRC, src_tr},
