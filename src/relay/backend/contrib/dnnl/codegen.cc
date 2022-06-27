@@ -468,6 +468,7 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
   std::map<std::string, std::string> op_map{
       {"bias", "add"},
       {"sum", "add"},
+      {"sumreverse", "add"},
       {"relu", "nn.relu"},
       {"tanh", "tanh"},
       {"sigmoid", "sigmoid"},

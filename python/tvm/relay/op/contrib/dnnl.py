@@ -90,8 +90,8 @@ _register_external_op_helper("nn.conv3d")
 _register_external_op_helper("nn.conv2d_transpose")
 _register_external_op_helper("nn.conv3d_transpose")
 _register_external_op_helper("nn.dense")
-# _register_external_op_helper("nn.max_pool2d")
-# _register_external_op_helper("nn.avg_pool2d")
+_register_external_op_helper("nn.max_pool2d")
+_register_external_op_helper("nn.avg_pool2d")
 _register_external_op_helper("nn.global_avg_pool2d")
 # _register_external_op_helper("nn.max_pool3d")
 # _register_external_op_helper("nn.avg_pool3d")
@@ -146,14 +146,17 @@ def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     return conv_out
 
 
-def make_conv_add_sum_relu_pattern(conv_type, has_relu=True):
+def make_conv_add_sum_relu_pattern(conv_type, has_relu=True, rever_sum=False):
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
     out = is_op(conv_type)(data1, weight)
     out = is_op("add")(out, bias)
-    out = is_op("add")(out, data2)
+    if rever_sum:
+        out = is_op("add")(data2, out)
+    else:
+        out = is_op("add")(out, data2)
     if has_relu:
         out = is_op("nn.relu")(out)
     return out
@@ -314,7 +317,8 @@ def pattern_table():
     dnnl_patterns.append(make_qnn_conv2d_pattern())
     dnnl_patterns.append(make_qnn_dense_pattern())
     dnnl_patterns.append(("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d"))),
-    dnnl_patterns.append(("dnnl.conv2d_bias_sum", make_conv_add_sum_relu_pattern("nn.conv2d"))),
+    # dnnl_patterns.append(("dnnl.conv2d_bias_sumreverse", make_conv_add_sum_relu_pattern("nn.conv2d", False, True))),
+    dnnl_patterns.append(("dnnl.conv2d_bias_sum", make_conv_add_sum_relu_pattern("nn.conv2d", False))),
 
     elt_list = ["nn.relu", "tanh", "sigmoid", "clip", "gelu", "swish", None]
     for with_bias in [True, False]:

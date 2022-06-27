@@ -137,7 +137,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {"gelu_erf", dnnl::algorithm::eltwise_gelu_erf},
   };
 
-  dnnl::primitive_attr ParseAttrs(const size_t& nid, TensorRequisite* bias_tr) {
+  dnnl::primitive_attr ParseAttrs(const size_t& nid, TensorRequisite* bias_tr, int start_idx) {
     dnnl::primitive_attr attr;
     // parsing of name to extract attributes
     auto op_name = nodes_[nid].GetOpName();
@@ -225,7 +225,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     }
 
     // Parsing bias_add.
-    *bias_tr = std::regex_match(op_name, bias_add_pat) ? GetInput(nid, 2) : TensorRequisite{};
+    *bias_tr = std::regex_match(op_name, bias_add_pat) ? GetInput(nid, start_idx + 2) : TensorRequisite{};
 
     return attr;
   }
@@ -284,14 +284,15 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Convolution(const size_t& nid) {
     auto node = nodes_[nid];
     auto op_name = nodes_[nid].GetOpName();
+    int data_idx = op_name.find("sumreverse") == std::string::npos ? 0 : 1;
 
     // Setup attributes.
-    auto src_tr = GetInput(nid, 0);
-    auto wgh_tr = GetInput(nid, 1);
+    auto src_tr = GetInput(nid, data_idx);
+    auto wgh_tr = GetInput(nid, data_idx + 1);
     auto dst_tr = GetOutput(nid, 0);
     auto bias_tr = TensorRequisite{};
 
-    auto attr = ParseAttrs(nid, &bias_tr);
+    auto attr = ParseAttrs(nid, &bias_tr, data_idx);
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
 
     auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
@@ -367,7 +368,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // TODO(@apeskov): Simulation of inplace primitive. just as PoC.
     auto sum_in_tr = GetInputByName(nid, "sum_idx").TreatAs(dst_layout);
     if (op_name.find("_sum") != std::string::npos) {
-      sum_in_tr = GetInput(nid, node.GetInputs().size()-1);
+      int idx = data_idx == 1 ? data_idx -1 : data_idx + 3;
+      sum_in_tr = GetInput(nid, idx);
       sum_in_tr = sum_in_tr.TreatAs(dst_layout);
     }
 
@@ -389,7 +391,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto dst_tr = GetOutput(nid, 0);
     auto bias_tr = TensorRequisite{};
 
-    auto attr = ParseAttrs(nid, &bias_tr);
+    auto attr = ParseAttrs(nid, &bias_tr, 0);
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
 
     auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
@@ -461,7 +463,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto dst_tr = GetOutput(nid, 0);
     auto bias_tr = TensorRequisite{};
 
-    auto attr = ParseAttrs(nid, &bias_tr);
+    auto attr = ParseAttrs(nid, &bias_tr, 0);
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
 
     // Assumption that bias is correct and can be squeezed to 1D
