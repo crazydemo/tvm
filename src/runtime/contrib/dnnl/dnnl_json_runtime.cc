@@ -293,7 +293,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto bias_tr = TensorRequisite{};
 
     auto attr = ParseAttrs(nid, &bias_tr, data_idx);
-    attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    // attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
 
     auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
     auto dilates = GetNodeAttr<std::vector<int64_t>>(node, "dilation");
@@ -318,12 +318,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // Should support G mixed with O. Like { G*O, I, H, W }
     // Use { G, O, I, H, W } weight format even if groups == 1
-    if (wgh_layout.find("G") == std::string::npos) {
-      auto w_dims = wgh_tr.dims();
-      w_dims[0] /= groups;
-      w_dims.insert(w_dims.begin(), groups);
-      wgh_tr = wgh_tr.Reshape(w_dims);
-    }
+    // if (wgh_layout.find("G") == std::string::npos) {
+    //   auto w_dims = wgh_tr.dims();
+    //   w_dims[0] /= groups;
+    //   w_dims.insert(w_dims.begin(), groups);
+    //   wgh_tr = wgh_tr.Reshape(w_dims);
+    // }
 
     // Assumption that bias is correct and can be squeezed to 1D
     bias_tr = bias_tr.Reshape({dst_tr.dims()[1]});
@@ -338,16 +338,27 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Similarly, Weight OC should match with destination OC.
     // Example dst: [1, 1000, 7, 7] with layout NCHW
     //         wgh: [1000, 1024, 1, 1] with layout OIHW48o -> [21, 1024, 1, 1, 48]
-    if (wgh_tr.dims()[0] != groups
+    if (wgh_layout.find("G") != std::string::npos) {
+      if (wgh_tr.dims()[0] != groups
         || wgh_tr.dims()[1] != dst_tr.dims()[1] / groups
         || wgh_tr.dims()[2] != src_tr.dims()[1] / groups) {
-      auto wgh_croped_dims = wgh_tr.dims();
-      wgh_croped_dims[0] = groups;
-      wgh_croped_dims[1] = dst_tr.dims()[1] / groups; // wgh_OC = dst_OC / groups
-      wgh_croped_dims[2] = src_tr.dims()[1] / groups; // wgh_IC = src_IC / groups
-      auto zero_offset = dnnl::memory::dims(wgh_tr.dims().size(), 0);
-      wgh_tr = wgh_tr.Crop(wgh_croped_dims, zero_offset);
+        auto wgh_croped_dims = wgh_tr.dims();
+        wgh_croped_dims[0] = groups;
+        wgh_croped_dims[1] = dst_tr.dims()[1] / groups; // wgh_OC = dst_OC / groups
+        wgh_croped_dims[2] = src_tr.dims()[1] / groups; // wgh_IC = src_IC / groups
+        auto zero_offset = dnnl::memory::dims(wgh_tr.dims().size(), 0);
+        wgh_tr = wgh_tr.Crop(wgh_croped_dims, zero_offset);
+      }
+    } else {
+      if (wgh_tr.dims()[0] != dst_tr.dims()[1]) {
+          auto wgh_croped_dims = wgh_tr.dims();
+          wgh_croped_dims[0] = dst_tr.dims()[1]; // wgh_OC = dst_OC / groups
+          wgh_croped_dims[1] = src_tr.dims()[1]; // wgh_IC = src_IC / groups
+          auto zero_offset = dnnl::memory::dims(wgh_tr.dims().size(), 0);
+          wgh_tr = wgh_tr.Crop(wgh_croped_dims, zero_offset);
+        }
     }
+    
 
     // Conv description.
     auto conv_desc = dnnl::convolution_forward::desc(
@@ -363,7 +374,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dst_tr = dst_tr.RequestLayout(conv_prim_desc.dst_desc());
     bias_tr = bias_tr.RequestLayout(conv_prim_desc.bias_desc());
 
-    auto scratchpad_tr = TensorRequisite::AsIs(conv_prim_desc.scratchpad_desc());
+    // auto scratchpad_tr = TensorRequisite::AsIs(conv_prim_desc.scratchpad_desc());
 
     // TODO(@apeskov): Simulation of inplace primitive. just as PoC.
     auto sum_in_tr = GetInputByName(nid, "sum_idx").TreatAs(dst_layout);
@@ -377,7 +388,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
            {{DNNL_ARG_SRC, src_tr},
             {DNNL_ARG_WEIGHTS, wgh_tr},
             {DNNL_ARG_BIAS, bias_tr},
-            {DNNL_ARG_SCRATCHPAD, scratchpad_tr},
+            // {DNNL_ARG_SCRATCHPAD, scratchpad_tr},
             {DNNL_ARG_DST, dst_tr}},
            {sum_in_tr, DNNL_ARG_DST});
   }

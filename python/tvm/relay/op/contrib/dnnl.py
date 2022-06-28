@@ -84,12 +84,12 @@ def _register_external_op_helper(op_name, supported=True):
 
 
 # _register_external_op_helper("nn.batch_norm")
-_register_external_op_helper("nn.conv1d")
-_register_external_op_helper("nn.conv2d")
-_register_external_op_helper("nn.conv3d")
-_register_external_op_helper("nn.conv2d_transpose")
-_register_external_op_helper("nn.conv3d_transpose")
-_register_external_op_helper("nn.dense")
+# _register_external_op_helper("nn.conv1d")
+# _register_external_op_helper("nn.conv2d")
+# _register_external_op_helper("nn.conv3d")
+# _register_external_op_helper("nn.conv2d_transpose")
+# _register_external_op_helper("nn.conv3d_transpose")
+# _register_external_op_helper("nn.dense")
 _register_external_op_helper("nn.max_pool2d")
 _register_external_op_helper("nn.avg_pool2d")
 _register_external_op_helper("nn.global_avg_pool2d")
@@ -314,11 +314,11 @@ def pattern_table():
         Created patterns.
     """
     dnnl_patterns = list()
-    dnnl_patterns.append(make_qnn_conv2d_pattern())
-    dnnl_patterns.append(make_qnn_dense_pattern())
-    dnnl_patterns.append(("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d"))),
+    # dnnl_patterns.append(make_qnn_conv2d_pattern())
+    # dnnl_patterns.append(make_qnn_dense_pattern())
+    # dnnl_patterns.append(("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern("nn.conv2d"))),
+    # dnnl_patterns.append(("dnnl.conv2d_bias_sum", make_conv_add_sum_relu_pattern("nn.conv2d", False))),
     # dnnl_patterns.append(("dnnl.conv2d_bias_sumreverse", make_conv_add_sum_relu_pattern("nn.conv2d", False, True))),
-    dnnl_patterns.append(("dnnl.conv2d_bias_sum", make_conv_add_sum_relu_pattern("nn.conv2d", False))),
 
     elt_list = ["nn.relu", "tanh", "sigmoid", "clip", "gelu", "swish", None]
     for with_bias in [True, False]:
