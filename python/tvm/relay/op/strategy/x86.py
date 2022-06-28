@@ -753,7 +753,7 @@ def conv2d_winograd_without_weight_transfrom_strategy_cpu(attrs, inputs, out_typ
 def concatenate_strategy_cpu(attrs, inputs, out_type, target):
     """concatenate x86 strategy"""
     strategy = _op.OpStrategy()
-    use_only_old_concat = False
+    use_only_old_concat = True
     for inpt in inputs:
         shape = inpt.shape
         for i in shape:
