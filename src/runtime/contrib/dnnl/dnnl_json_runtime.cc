@@ -76,6 +76,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto arg_data_provider = makeIODataProvider(args);
     auto mem_solver = tensor_registry_.MakeSolver(arg_data_provider);
     // Execute primitives one by one
+    std::cout << "Start to run the partition:" << std::endl;
+    std::cout << graph_json_;
+    std::cout << "================================================================" << std::endl;
     for (const auto& act : net_) {
       auto prim = std::get<0>(act);
       auto arg_reqs = std::get<1>(act);
@@ -83,6 +86,37 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       // Find proper dnnl::memory buffers
       std::unordered_map<int, dnnl::memory> mem_args;
       for (const auto& kvp : arg_reqs) mem_args[kvp.first] = mem_solver(kvp.second);
+
+      static const std::unordered_map<dnnl::primitive::kind, std::string> prim_names{
+          {dnnl::primitive::kind::reorder, "reorder"},
+          {dnnl::primitive::kind::convolution, "conv"},
+          {dnnl::primitive::kind::deconvolution, "deconv"},
+          {dnnl::primitive::kind::inner_product, "Dense"},
+          {dnnl::primitive::kind::pooling_v2, "pool_v2"}};
+      static const std::unordered_map<int, std::string> arg_names{{DNNL_ARG_SRC, "src"},
+                                                                  {DNNL_ARG_DST, "dst"},
+                                                                  {DNNL_ARG_BIAS, "bias"},
+                                                                  {DNNL_ARG_WEIGHTS, "weights"},
+                                                                  {DNNL_ARG_SCRATCHPAD, "scratch"}};
+      const auto prim_kind = prim.get_kind();
+      if (prim_names.find(prim_kind) != prim_names.end()) {
+        std::cout << "executing " << prim_names.at(prim_kind)
+                  << " primitiv --------------------------------" << std::endl;
+      } else {
+        std::cout << "executing unknown primitiv --------------------------------" << std::endl;
+      }
+      std::map<int, dnnl::memory> args;
+      for (const auto& kvp : mem_args) args[kvp.first] = kvp.second;
+      for (const auto& arg : args) {
+        if (arg_names.find(arg.first) != arg_names.end()) {
+          std::cout << "address of " << arg_names.at(arg.first) << ": "
+                    << arg.second.get_data_handle() << std::endl;
+        } else {
+          std::cout << "address for UNKNOWN_ARG #." << arg.first << ": "
+                    << arg.second.get_data_handle() << std::endl;
+        }
+      }
+
       prim.execute(stream_, mem_args);
     }
   }
