@@ -844,17 +844,34 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     return TensorRequisite::AsIs(desc, eid).Backward();
   }
 
+  bool IsIntermidate(const TensorRequisite& tr) {
+    auto eid = tr.eid();
+    bool res = true;
+    if (std::find(input_nodes_.begin(), input_nodes_.end(), eid) != input_nodes_.end()) {
+      res = false;
+    } else if (std::any_of(outputs_.begin(), outputs_.end(),
+                           [eid](auto& output) { return output.id_ == eid; })) {
+      res = false;
+    } else {
+      res = true;
+    }
+    return res;
+  }
+
   /*! \brief Helper function to register primitive into execution queue */
   void Submit(const dnnl::primitive& prim, const std::unordered_map<int, TensorRequisite>& tr_args,
               const std::pair<TensorRequisite, int>& inplace_conf = {}) {
     // Register all provided TR arguments
     std::unordered_map<int, TensorRegistry::ArgId> prim_arg_id;
     TensorRegistry::ActionQue post_prim_actions;
-    
+
     // Simulate inplace primitive
-    if (auto tr = inplace_conf.first) {
-      auto arg_id = tensor_registry_.Register(tr, &net_);
-      tensor_registry_.MakeShared(tr_args.at(inplace_conf.second), tr);
+    if (auto tr_in = inplace_conf.first) {
+      auto tr_out = tr_args.at(inplace_conf.second);
+      if (IsIntermidate(tr_in) && IsIntermidate(tr_out)) {
+        tensor_registry_.Register(tr_in, &net_);
+        tensor_registry_.MakeShared(tr_out, tr_in);
+      }
     }
 
     for (const auto& kvp : tr_args) {
