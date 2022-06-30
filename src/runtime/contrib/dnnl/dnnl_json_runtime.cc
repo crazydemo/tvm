@@ -78,6 +78,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Execute primitives one by one
     std::cout << "Start to run the partition:" << std::endl;
     std::cout << graph_json_;
+    std::cout << "Number of input: " << input_nodes_.size() << std::endl;
+    std::cout << "Number of output: " << outputs_.size() << std::endl;
+    std::cout << "Number of const: " << const_idx_.size() << std::endl;
+    std::cout << "Number of vars: " << input_var_eid_.size() << std::endl;
     std::cout << "================================================================" << std::endl;
     for (const auto& act : net_) {
       auto prim = std::get<0>(act);
@@ -117,6 +121,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         }
       }
 
+      if ((prim.get_kind() == dnnl::primitive::kind::reorder) &&
+          (mem_args.at(DNNL_ARG_SRC).get_data_handle() ==
+           mem_args.at(DNNL_ARG_DST).get_data_handle())) {
+        std::cout << "skip the reorder: src and dst are indentical." << std::endl;
+        continue;
+      }
       prim.execute(stream_, mem_args);
     }
   }
@@ -325,6 +335,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto dst_tr = GetOutput(nid, 0);
     auto bias_tr = TensorRequisite{};
 
+    auto dst_id = dst_tr.eid();
+    std::cout << "dst_id: " << dst_id << std::endl;
+
     auto attr = ParseAttrs(nid, &bias_tr);
     attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
 
@@ -404,6 +417,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       sum_in_tr = GetInput(nid, node.GetInputs().size()-1);
       sum_in_tr = sum_in_tr.TreatAs(dst_layout);
     }
+    auto sum_in_id = dst_tr.eid();
+    std::cout << "sum_in_id: " << sum_in_id << std::endl;
 
     Submit(dnnl::convolution_forward(conv_prim_desc),
            {{DNNL_ARG_SRC, src_tr},
@@ -835,11 +850,19 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // Register all provided TR arguments
     std::unordered_map<int, TensorRegistry::ArgId> prim_arg_id;
     TensorRegistry::ActionQue post_prim_actions;
+    
+    // Simulate inplace primitive
+    if (auto tr = inplace_conf.first) {
+      auto arg_id = tensor_registry_.Register(tr, &net_);
+      tensor_registry_.MakeShared(tr_args.at(inplace_conf.second), tr);
+    }
+
     for (const auto& kvp : tr_args) {
       const auto& key = kvp.first;
       const auto& tr = kvp.second;
 
       if (!tr.defined()) continue;  // empty arg is admitted. Just skip it
+      // if (prim_arg_id.find(key) != prim_arg_id.end()) continue;
       auto arg_id = tensor_registry_.Register(tr, tr.IsReversed() ? &post_prim_actions : &net_);
       prim_arg_id[key] = arg_id;
     }

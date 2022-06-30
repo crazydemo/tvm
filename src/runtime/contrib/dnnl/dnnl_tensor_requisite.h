@@ -115,6 +115,23 @@ class TensorRequisite {
   /*! \brief return tensor desc */
   dnnl::memory::desc desc() const { return t_desc_; }
 
+  Tid eid() const {
+    auto res = kUndefinedTid;
+
+    if (!defined()) {
+      res = kUndefinedTid;
+    } else if (eid_ == kUndefinedTid) {
+      if (orig_) {
+        res = orig_->eid();
+      } else {
+        res = kUndefinedTid;
+      }
+    } else {
+      res = eid_;
+    }
+    return res;
+  };
+
   /*! \brief Make TR with backward dataflow */
   TensorRequisite Backward() const {
     if (!defined()) return *this;
@@ -508,6 +525,11 @@ class TensorRegistry {
   TensorRegistry() = default;
   TensorRegistry(const dnnl::engine& eng, const std::set<uint32_t>& ext_io_eid)
       : tmp_mem_collection_(1), ext_io_eid_(ext_io_eid), eng_(eng), stream_(eng) {}
+
+  void MakeShared(const TensorRequisite& tr, const TensorRequisite& shared) {
+    eid2idx_tmp_[tr.eid()] = eid2idx_tmp_[shared.eid()];
+    std::cout << "make id-" << tr.eid() << " share with id-" << shared.eid() << std::endl;
+  }
 
   /*!
    * \brief Register TR to registry
