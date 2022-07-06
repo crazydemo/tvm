@@ -168,6 +168,7 @@ set(USE_MKL OFF)
 # choices:
 # - ON: Enable DNNL in BYOC and -libs=dnnl, by default using json runtime in DNNL codegen
 # - JSON: same as above.
+# - GRAPH: Enable DNNL_GRAPH in BYOC and -libs=dnnl_graph, by default using json runtime in DNNL_GRAPH codegen
 # - C_SRC: use c source runtime in DNNL codegen
 # - path/to/oneDNN：oneDNN root path
 # - OFF: Disable DNNL

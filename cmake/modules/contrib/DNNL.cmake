@@ -45,6 +45,22 @@ elseif((USE_DNNL STREQUAL "ON") OR (USE_DNNL STREQUAL "JSON"))
                                       src/runtime/contrib/cblas/dnnl_blas.cc)
   list(APPEND RUNTIME_SRCS ${DNNL_CONTRIB_SRC})
   message(STATUS "Build with DNNL JSON runtime: " ${EXTERN_LIBRARY_DNNL})
+elseif(USE_DNNL STREQUAL "GRAPH")
+  add_definitions(-DUSE_JSON_RUNTIME=1) 
+  add_definitions(-DUSE_ONEDNN_GRAPH_JSON_RUNTIME=1)
+  tvm_file_glob(GLOB DNNL_RELAY_CONTRIB_SRC src/relay/backend/contrib/dnnl/*.cc)
+  list(APPEND COMPILER_SRCS ${DNNL_RELAY_CONTRIB_SRC})
+
+  find_library(EXTERN_LIBRARY_DNNL dnnl)
+  list(APPEND TVM_RUNTIME_LINKER_LIBS ${EXTERN_LIBRARY_DNNL})
+  find_library(EXTERN_LIBRARY_DNNL_GRAPH dnnl_graph)
+  list(APPEND TVM_RUNTIME_LINKER_LIBS ${EXTERN_LIBRARY_DNNL_GRAPH})
+  tvm_file_glob(GLOB DNNL_CONTRIB_SRC src/runtime/contrib/dnnl/dnnl_graph_json_runtime.cc
+                                      src/runtime/contrib/dnnl/dnnl_utils.cc
+                                      src/runtime/contrib/dnnl/dnnl.cc
+                                      src/runtime/contrib/cblas/dnnl_blas.cc)
+  list(APPEND RUNTIME_SRCS ${DNNL_CONTRIB_SRC})
+  message(STATUS "Build with OneDNN Graph JSON runtime: " ${EXTERN_LIBRARY_DNNL_GRAPH} ", " ${EXTERN_LIBRARY_DNNL})
 elseif(USE_DNNL STREQUAL "C_SRC")
   tvm_file_glob(GLOB DNNL_RELAY_CONTRIB_SRC src/relay/backend/contrib/dnnl/*.cc)
   list(APPEND COMPILER_SRCS ${DNNL_RELAY_CONTRIB_SRC})
