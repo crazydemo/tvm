@@ -34,7 +34,7 @@
 #include "../json/json_runtime.h"
 #include "oneapi/dnnl/dnnl_graph.hpp"
 #include "dnnl.hpp"
-#include "dnnl_utils.h"
+#include "dnnl_graph_utils.h"
 
 namespace tvm {
 namespace runtime {
@@ -46,8 +46,6 @@ using namespace dnnl::graph;
 using std::regex_replace; using std::regex;
 
 class DNNLGraphJSONRuntime : public JSONRuntimeBase {
-  using tag = dnnl::memory::format_tag;
-  using dt = dnnl::memory::data_type;
   using data_type = logical_tensor::data_type;
   using layout_type = logical_tensor::layout_type;
 
@@ -80,14 +78,25 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       entry_out_mem_[eid].set_data_handle(data_entry_[eid]->data);
     }
     
+    std::cout<<"dnnl graph executing ..."<<std::endl;
     /// execute the compile partition
     for (size_t i = 0; i < cps_.size(); ++i) {
       cps_.at(i).execute(strm_, input_args_.at(i), output_args_.at(i));
     }
-
   }
 
  private:
+  
+  const std::map<std::string, op::kind> elt_name2kind{
+      {"nn.relu", op::kind::ReLU},
+      {"tanh", op::kind::Tanh},
+      {"sigmoid", op::kind::Sigmoid},
+  };
+
+  const std::map<std::string, op::kind> binary_name2kind{
+      {"add", op::kind::Add},
+  };
+
   // Build up the engine based on the input graph.
   void BuildEngine() {
     /// create a new engine and stream
@@ -102,11 +111,18 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         auto op_name = node.GetOpName();
         if (op_name == "nn.conv2d") {
           Convolution(nid, g);
+        } else if (elt_name2kind.count(op_name)) {
+          Eltwise(nid, g);
+        } else if (binary_name2kind.count(op_name)) {
+          Binary(nid, g);
+        } else if (op_name == "nn.bias_add") {
+          BiasAdd(nid, g);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
       }
     }
+    Compile(g);
   }
 
   void Convolution(const size_t& nid, graph& g) {
@@ -128,8 +144,9 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
     std::string filter_format = regex_replace(kernel_layout, regex("(D?)(H?)W"), "X");
     /// create op conv
+    std::cout<<"conv" + std::to_string(nid)<<std::endl;
     op conv {nid, op::kind::Convolution, {src_desc, wgh_desc},
-            {dst_desc}, "conv"};
+            {dst_desc}, "conv" + std::to_string(nid)};
     conv.set_attr<std::vector<int64_t>>("strides", strides);
     conv.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
     conv.set_attr<std::vector<int64_t>>("pads_end", padding_r);
@@ -140,31 +157,86 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
 
     /// add the ops to the graph
     g.add_op(conv);
+  }
+
+  void Eltwise(const size_t& nid, graph& g) {
+    auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+    auto op_kind = elt_name2kind.at(op_name);
+
+    // Setup attributes.
+    auto src_desc = GetInput(nid, 0);
+    auto dst_desc = GetOutput(nid, 0);
+
+    /// create op conv
+    std::cout<<op_name + std::to_string(nid)<<std::endl;
+    op elt {nid, op_kind, {src_desc}, {dst_desc}, op_name + std::to_string(nid)};
+    /// add the ops to the graph
+    g.add_op(elt);
+  }
+
+  void Binary(const size_t& nid, graph& g) {
+    auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+    auto op_kind = binary_name2kind.at(op_name);
+
+    // Setup attributes.
+    auto src1_desc = GetInput(nid, 0);
+    auto src2_desc = GetInput(nid, 1);
+    auto dst_desc = GetOutput(nid, 0);
+
+    /// create op conv
+    std::cout<<op_name + std::to_string(nid)<<std::endl;
+    op elt {nid, op_kind, {src1_desc, src2_desc}, {dst_desc}, op_name + std::to_string(nid)};
+    /// add the ops to the graph
+    g.add_op(elt);
+  }
+
+  void BiasAdd(const size_t& nid, graph& g) {
+    auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+
+    // Setup attributes.
+    auto src1_desc = GetInput(nid, 0);
+    auto src2_desc = GetInput(nid, 1);
+    auto dst_desc = GetOutput(nid, 0);
+
+    /// create op conv
+    std::cout<<op_name + std::to_string(nid)<<std::endl;
+    op elt {nid, op::kind::BiasAdd, {src1_desc, src2_desc}, {dst_desc}, op_name + std::to_string(nid)};
+    /// add the ops to the graph
+    g.add_op(elt);
+  }
+
+  void Compile(graph& g) {
     // Partition the graph.
+    std::cout<<"dnnl graph compiling ..."<<std::endl;
     auto partitions = g.get_partitions();
-    if (partitions.size() != 1)
+    if (partitions.size() < 1)
         throw std::runtime_error(
                 "cpu_simple_pattern_f32: incorrect partition number");
-    auto partition = partitions[0];
+    
     /// compile the partition. the shape and layout of output logical tensor
     /// will be inferred during the compilation.
-    std::vector<logical_tensor> inputs = partition.get_in_ports();
-    std::vector<logical_tensor> outputs = partition.get_out_ports();
-    auto cp = partition.compile(inputs, outputs, eng_);
+    for (int pi = 0; pi < partitions.size(); ++pi) {
+      std::vector<logical_tensor> inputs = partitions[pi].get_in_ports();
+      std::vector<logical_tensor> outputs = partitions[pi].get_out_ports();
+      auto cp = partitions[pi].compile(inputs, outputs, eng_);
 
-    std::vector<tensor> in_trs, out_trs;
-    for (int i = 0; i < inputs.size(); ++i) {
-      tensor tr = CreateTensor(inputs[i]);
-      in_trs.push_back(tr);
-    }
-    for (int i = 0; i < outputs.size(); ++i) {
-      tensor tr = CreateTensor(outputs[i]);
-      out_trs.push_back(tr);
-    }
+      std::vector<tensor> in_trs, out_trs;
+      for (int i = 0; i < inputs.size(); ++i) {
+        tensor tr = CreateTensor(inputs[i]);
+        in_trs.push_back(tr);
+      }
+      for (int i = 0; i < outputs.size(); ++i) {
+        tensor tr = CreateTensor(outputs[i]);
+        out_trs.push_back(tr);
+      }
 
-    cps_.push_back(cp);
-    input_args_.push_back(in_trs);
-    output_args_.push_back(out_trs);
+      cps_.push_back(cp);
+      input_args_.push_back(in_trs);
+      output_args_.push_back(out_trs);
+    }
   }
 
   template <typename T, std::enable_if_t<std::is_integral<T>::value, int> = 0>
@@ -203,7 +275,7 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     return AttrConvert<T>(attr);
   }
 
-  logical_tensor GetInput(const size_t& nid, const int idx) {
+  logical_tensor GetInput(const size_t& nid, const int idx, layout_type lt = layout_type::strided) {
     if (idx == -1) return {};  // -1 reserved value for empty input.
 
     const JSONGraphNode& node = nodes_[nid];
@@ -215,11 +287,12 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     auto dtype = nodes_[data_entry.id_].GetOpDataType()[data_entry.index_];
     auto eid = node_row_ptr_[data_entry.id_] + data_entry.index_;
     // todo @crazydemo alter dtype.
-    logical_tensor res {eid, data_type::f32, shape, layout_type::strided};
+    // auto dgraph_dtype = dtype_dl2dgraph(dtype);
+    logical_tensor res {eid, data_type::f32, shape, lt};
     return res;
   }
 
-  logical_tensor GetOutput(const size_t& nid, const int idx) {
+  logical_tensor GetOutput(const size_t& nid, const int idx, layout_type lt = layout_type::strided) {
     if (idx == -1) return {};  // -1 reserved value for empty input.
 
     const JSONGraphNode& node = nodes_[nid];
@@ -230,51 +303,24 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     auto eid = node_row_ptr_[nid] + static_cast<uint32_t>(idx);
 
     ICHECK(data_entry_[eid] == nullptr);
-    logical_tensor res {eid, data_type::f32, shape, layout_type::strided};
+    // auto dgraph_dtype = dtype_dl2dgraph(dtype);
+    logical_tensor res {eid, data_type::f32, shape, lt};
     return res;
   }
 
   tensor CreateTensor(logical_tensor desc) {
     auto eid = desc.get_id();
-    // auto const_dl_tensor = data_entry_[eid];
-
     tensor res {desc, eng_, {}};
-    // }
     entry_out_mem_[eid] = res;
     return res;
   }
 
-  // Read from DNNL memory (+offset) and write to the handle.
-  inline void read_from_dnnl_memory(void* handle, const dnnl::memory& mem, size_t size,
-                                    size_t offset = 0) {
-    uint8_t* src = static_cast<uint8_t*>(mem.get_data_handle());
-    std::copy(src + offset, src + offset + size, static_cast<uint8_t*>(handle));
-  }
-
-  // Read from the handle and write to DNNL memory (+offset).
-  inline void write_to_dnnl_memory(void* handle, const dnnl::memory& mem, size_t size,
-                                   size_t offset = 0) {
-    uint8_t* dst = static_cast<uint8_t*>(mem.get_data_handle());
-    std::copy(reinterpret_cast<uint8_t*>(handle), reinterpret_cast<uint8_t*>(handle) + size,
-              dst + offset);
-  }
-
-  /* The dnnl engine. */
-  dnnl::engine engine_;
-  /* The dnnl stream. */
-  dnnl::stream stream_;
-  /* The network layers that are represented in dnnl primitives. */
-  std::vector<dnnl::primitive> net_;
-  /* The memory that is consumed by arguments. */
-  std::vector<std::unordered_map<int, dnnl::memory>> net_args_;
-  /* The entry ID to its corresponding output memory. */
-  // std::unordered_map<uint32_t, std::pair<dnnl::memory, size_t>> entry_out_mem_;
   /* The dnnl engine. */
   engine eng_;
   /* The dnnl stream. */
   stream strm_;
+
   /* The network layers that are represented in dnnl primitives. */
-  // graph g_ = engine::kind::cpu;
   /* The memory that is consumed by arguments. */
   std::vector<std::unordered_map<int, std::vector<logical_tensor>>> partition_args_;
   std::vector<std::vector<tensor>> input_args_;
