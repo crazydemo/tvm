@@ -423,8 +423,68 @@ def test_conv2d_bias_sum_relu(run_module, dtype="float32"):
     run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
 
+def test_invalid_graph_pattern(run_module, dtype="float32"):
+    def get_graph():
+        x = relay.var("x", shape=(1, 3), dtype=dtype)
+        y = relay.var("y", shape=(1, 3), dtype=dtype)
+        z = relay.add(x, y)
+        # w = relay.add(z, y)
+        # out = relay.Tuple((z, w))
+        f = tvm.IRModule.from_expr(z)
+        return f, {"x": (1, 3), "y": (1, 3)}, []
+
+    run_and_verify_func(get_graph(), run_module=run_module, dtype=dtype)
+
+
+def test_pool2d(run_module, dtype="float32"):
+    def get_graph(
+        op,
+        x_shape=(1, 3, 32, 32),
+        pool_size=(2, 2),
+        strides=(2, 2),
+        padding=(0, 0),
+        ceil_mode=False,
+        count_include_pad=None,
+    ):
+        x = relay.var("x", shape=(x_shape), dtype=dtype)
+        if count_include_pad is not None:
+            out = op(
+                x,
+                pool_size=pool_size,
+                strides=strides,
+                padding=padding,
+                ceil_mode=ceil_mode,
+                count_include_pad=count_include_pad,
+            )
+        else:
+            out = op(
+                x,
+                pool_size=pool_size,
+                strides=strides,
+                padding=padding,
+                ceil_mode=ceil_mode,
+            )
+        out = tvm.IRModule.from_expr(out)
+        return out, {"x": x_shape}, []
+
+    for pool_size in [(2, 2), (3, 3)]:
+        for strides in [(1, 1), (2, 2)]:
+            for padding in [(0, 0), (1, 1), (0, 0, 1, 1)]:
+                    run_and_verify_func(
+                        get_graph(
+                            relay.nn.max_pool2d,
+                            pool_size=pool_size,
+                            strides=strides,
+                            padding=padding,
+                        ),
+                        run_module=run_module,
+                    )
+
+
 if __name__ == "__main__":
     # tvm.testing.main()
     test_conv2d_weights_const(True)
     test_conv2d_pattern(True)
     test_conv2d_bias_sum_relu(True)
+    test_invalid_graph_pattern(True)
+    test_pool2d(True)
