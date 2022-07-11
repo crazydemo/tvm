@@ -480,11 +480,76 @@ def test_pool2d(run_module, dtype="float32"):
                         run_module=run_module,
                     )
 
+    
+def test_resnetv1_rewrite(run_module, dtype="float32"):
+    def get_graph():
+        data_shape = (1, 256, 56, 56)
+        w_shapes = [(64, 256, 1, 1),
+                    (64, 64, 3, 3),
+                    # (256, 64, 1, 1),
+                    # (128, 256, 1, 1),
+                    # (128, 128, 3, 3),
+                    # (512, 128, 1, 1),
+                    # (512, 256, 1, 1),
+                    ]
+        x = relay.var("x", shape=data_shape, dtype=dtype)
+        wights = [relay.const(np.random.randint(0, 1, w).astype(dtype)) for w in w_shapes]
+        biases = [relay.const(np.random.randint(0, 1, w[0]).astype(dtype)) for w in w_shapes]
+
+        conv1 = relay.nn.conv2d(x, wights[0], channels=w_shapes[0][0], kernel_size=w_shapes[0][2:4],
+                                padding=(w_shapes[0][2]//2, w_shapes[0][3]//2))
+        # conv1 = relay.nn.bias_add(conv1, biases[0])
+        # conv1 = relay.nn.relu(conv1)
+
+        conv2 = relay.nn.conv2d(conv1, wights[1], channels=w_shapes[1][0], kernel_size=w_shapes[1][2:4],
+                                padding=(w_shapes[1][2]//2, w_shapes[1][3]//2))
+        # conv2 = relay.nn.bias_add(conv2, biases[1])
+        # conv2 = relay.nn.relu(conv2)
+
+        # conv3 = relay.nn.conv2d(conv2, wights[2], channels=w_shapes[2][0], kernel_size=w_shapes[2][2:4],
+        #                         padding=(w_shapes[2][2]//2, w_shapes[2][3]//2))
+        # conv3 = relay.nn.bias_add(conv3, biases[2])
+        # conv3 = relay.add(conv3, x)
+        # conv3 = relay.nn.relu(conv3)
+
+        # left_conv4 = relay.nn.conv2d(conv3, wights[3], channels=w_shapes[3][0],
+        #                              strides=(2, 2), kernel_size=w_shapes[3][2:4],
+        #                              padding=(w_shapes[3][2]//2, w_shapes[3][3]//2))
+        # left_conv4 = relay.nn.bias_add(left_conv4, biases[3])
+        # left_conv4 = relay.nn.relu(left_conv4)
+
+        # left_conv5 = relay.nn.conv2d(left_conv4, wights[4], channels=w_shapes[4][0], kernel_size=w_shapes[4][2:4],
+        #                              padding=(w_shapes[4][2]//2, w_shapes[4][3]//2))
+        # left_conv5 = relay.nn.bias_add(left_conv5, biases[4])
+        # left_conv5 = relay.nn.relu(left_conv5)
+
+        # left_conv6 = relay.nn.conv2d(left_conv5, wights[5], channels=w_shapes[5][0], kernel_size=w_shapes[5][2:4],
+        #                              padding=(w_shapes[5][2]//2, w_shapes[5][3]//2))
+        # left_conv6 = relay.nn.bias_add(left_conv6, biases[5])
+
+        # right_conv7 = relay.nn.conv2d(conv3, wights[6], channels=w_shapes[6][0],
+        #                               strides=(2, 2), kernel_size=w_shapes[6][2:4],
+        #                               padding=(w_shapes[6][2]//2, w_shapes[6][3]//2))
+        # right_conv7 = relay.nn.bias_add(right_conv7, biases[6])
+
+        # out = relay.add(left_conv6, right_conv7)
+        # out = relay.nn.relu(out)
+
+        dic = {"x": data_shape}
+        param_lst = []
+        return conv2, dic, param_lst
+
+    net, dic, param_lst = get_graph()
+    net = tvm.IRModule.from_expr(net)
+    config = net, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
 
 if __name__ == "__main__":
-    # tvm.testing.main()
-    test_conv2d_weights_const(True)
-    test_conv2d_pattern(True)
-    test_conv2d_bias_sum_relu(True)
-    test_invalid_graph_pattern(True)
-    test_pool2d(True)
+    # # tvm.testing.main()
+    # test_conv2d_weights_const(True)
+    # test_conv2d_pattern(True)
+    # test_conv2d_bias_sum_relu(True)
+    # test_invalid_graph_pattern(True)
+    # test_pool2d(True)
+    test_resnetv1_rewrite(True)
