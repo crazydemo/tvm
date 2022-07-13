@@ -106,6 +106,8 @@ def partition_for_dnnl(mod, params=None, alter_layout=True, prune_subgraphs=True
 
     byoc_seq = tvm.transform.Sequential(
         [
+            transform.PartitionViaDNNLGraph(dnnl.pattern_table()),
+            tvm.transform.PrintIR(),
             transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
@@ -177,7 +179,7 @@ def run_and_verify(mod, input, params, target, run_module, subgraph_num=None, te
             if use_dnnl:
                 processed_mod = partition_for_dnnl(processed_mod, params, alter_layout)
                 check_dnnl_used(processed_mod)
-            print(processed_mod)
+            # print(processed_mod)
 
             with tvm.transform.PassContext(opt_level=3):
                 func = relay.create_executor(
@@ -548,8 +550,8 @@ def test_resnetv1_rewrite(run_module, dtype="float32"):
 if __name__ == "__main__":
     # # tvm.testing.main()
     # test_conv2d_weights_const(True)
-    # test_conv2d_pattern(True)
+    test_conv2d_pattern(True)
     # test_conv2d_bias_sum_relu(True)
     # test_invalid_graph_pattern(True)
     # test_pool2d(True)
-    test_resnetv1_rewrite(True)
+    # test_resnetv1_rewrite(True)

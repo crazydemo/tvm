@@ -567,6 +567,42 @@ def MergeComposite(pattern_table):
     return _ffi_api.MergeComposite(pattern_names, patterns, *checks)
 
 
+def PartitionViaDNNLGraph(pattern_table):
+    """Merge multiple operators into a single composite relay function.
+
+    Parameters
+    ----------
+    pattern_table : List[Tuple[str, tvm.relay.dataflow_pattern.DFPattern, Function]]
+        A list of (pattern_name, pattern, check) tuples.
+        The order of the patterns in the list will determine the order
+        of priority in which they are matched.
+        'check' is a function to check whether an extracted pattern matches.
+        It can be implemented by pattern writer but if not specified it will
+        always return True.
+
+    Returns
+    -------
+    ret : tvm.transform.Pass
+        The registered pass that merges operators into a single composite
+        relay function.
+    """
+    pattern_names = []
+    patterns = []
+    checks = []
+    for tup in pattern_table:
+        if len(tup) == 2:
+            pattern_name, pattern = tup
+            check = lambda extract: True
+        elif len(tup) == 3:
+            pattern_name, pattern, check = tup
+
+        pattern_names.append(pattern_name)
+        patterns.append(pattern)
+        checks.append(check)
+
+    return _ffi_api.PartitionViaDNNLGraph(pattern_names, patterns, *checks)
+
+
 def MergeCompilerRegions():
     """Merge together compiler regions.
 
