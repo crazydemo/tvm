@@ -108,7 +108,7 @@ def partition_for_dnnl(mod, params=None, alter_layout=True, prune_subgraphs=True
         [
             transform.MergeDNNLGraph(),
             tvm.transform.PrintIR(),
-            transform.AnnotateTarget("dnnl"),
+            # transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
         ]
@@ -157,7 +157,7 @@ def run_and_verify(mod, input, params, target, run_module, subgraph_num=None, te
     result_dict = dict()
     for mode in ["graph"]:#, "vm"
         configs = [
-            (False, False, False),
+            # (False, False, False),
             (True, False, False),
         ]
         # if test_bf16 and bf16_supported():
