@@ -78,8 +78,16 @@ class PatternPartitioner : protected MixedModeMutator {
       }
       
       // Get output descriptor.
+      PostDfsIndex next_call_idx = node->outputs_[0]->index_;
+      auto next_node = expr_graph->index_to_node(next_call_idx);
       logical_tensor output {index, dnnl_dtype, dnnl_shape.size(), layout_type::undef};
-
+      if (auto next_call = next_node->ref().as<CallNode>()) {
+        Expr arg = next_call->args[0];
+        dnnl_shape = GetShape(arg->checked_type());
+        dnnl_dtype = GetDtype(arg->checked_type());
+        output = {index, dnnl_dtype, dnnl_shape, layout_type::undef};
+      }
+      
       //Get OP.
       PostDfsIndex op_idx = node->inputs_[0]->index_;
       if (IsOp(call, "nn.conv2d")) {
@@ -89,19 +97,19 @@ class PatternPartitioner : protected MixedModeMutator {
       } else {
         LOG_FATAL << "Unsupported DNNL Graph Op";
       }
+    }
 
-      // Get partitions.
-      std::cout<<"dnnl graph compiling ..."<<std::endl;
-      auto partitions = dnnl_graph.get_partitions();
-      if (partitions.size() < 1)
-          throw std::runtime_error(
-                  "cpu_simple_pattern_f32: incorrect partition number");
-      std::cout << "Number of returned partitions: " << partitions.size() << "\n";
-      for (size_t i = 0; i < partitions.size(); ++i) {
-          std::cout << "Partition[" << partitions[i].get_id()
-                    << "]'s supporting status: "
-                    << (partitions[i].is_supported() ? "true" : "false") << "\n";
-      }
+    // Get partitions.
+    std::cout<<"dnnl graph compiling ..."<<std::endl;
+    auto partitions = dnnl_graph.get_partitions();
+    if (partitions.size() < 1)
+        throw std::runtime_error(
+                "cpu_simple_pattern_f32: incorrect partition number");
+    std::cout << "Number of returned partitions: " << partitions.size() << "\n";
+    for (size_t i = 0; i < partitions.size(); ++i) {
+        std::cout << "Partition[" << partitions[i].get_id()
+                  << "]'s supporting status: "
+                  << (partitions[i].is_supported() ? "true" : "false") << "\n";
     }
     return pre;
   }
