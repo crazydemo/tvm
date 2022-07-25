@@ -81,12 +81,12 @@ def _register_external_op_helper(op_name, supported=True):
 
 # _register_external_op_helper("nn.batch_norm")
 # _register_external_op_helper("nn.conv1d")
-_register_external_op_helper("nn.conv2d")
+# _register_external_op_helper("nn.conv2d")
 # _register_external_op_helper("nn.conv3d")
 # _register_external_op_helper("nn.conv2d_transpose")
 # _register_external_op_helper("nn.conv3d_transpose")
 # _register_external_op_helper("nn.dense")
-_register_external_op_helper("nn.max_pool2d")
+# _register_external_op_helper("nn.max_pool2d")
 # _register_external_op_helper("nn.avg_pool2d")
 # _register_external_op_helper("nn.max_pool3d")
 # _register_external_op_helper("nn.avg_pool3d")
@@ -96,13 +96,13 @@ _register_external_op_helper("nn.max_pool2d")
 # _register_external_op_helper("log")
 # _register_external_op_helper("sqrt")
 # _register_external_op_helper("round")
-_register_external_op_helper("nn.relu")
+# _register_external_op_helper("nn.relu")
 # _register_external_op_helper("nn.leaky_relu")
 # _register_external_op_helper("tanh")
 # _register_external_op_helper("sigmoid")
 # _register_external_op_helper("nn.softmax")
-_register_external_op_helper("add")
-_register_external_op_helper("nn.bias_add")
+# _register_external_op_helper("add")
+# _register_external_op_helper("nn.bias_add")
 # _register_external_op_helper("multiply")
 # _register_external_op_helper("nn.layer_norm")
 
@@ -280,24 +280,25 @@ def pattern_table():
         Created patterns.
     """
     dnnl_patterns = list()
-    dnnl_patterns.append(make_qnn_conv2d_pattern())
-    dnnl_patterns.append(make_qnn_dense_pattern())
+    # dnnl_patterns.append(make_qnn_conv2d_pattern())
+    # dnnl_patterns.append(make_qnn_dense_pattern())
 
-    elt_list = ["nn.relu", "tanh", "sigmoid", "gelu", None]
-    for with_bias in [True, False]:
+    elt_list = ["nn.relu", None]#"nn.relu", "tanh", "sigmoid", "gelu", 
+    for with_bias in [True]:#, False
         for elt in elt_list:
             if not with_bias and not elt:
                 continue
             for conv_name in [
-                "nn.conv1d",
+                # "nn.conv1d",
                 "nn.conv2d",
-                "nn.conv3d",
-                "nn.conv2d_transpose",
-                "nn.conv3d_transpose",
+                # "nn.conv3d",
+                # "nn.conv2d_transpose",
+                # "nn.conv3d_transpose",
             ]:
                 if elt != "gelu":
                     dnnl_patterns.append(make_dnnl_pattern(conv_name, with_bias, elt))
-            dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, elt))
+            # dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, elt))
+    print(dnnl_patterns)
     return dnnl_patterns
 
 

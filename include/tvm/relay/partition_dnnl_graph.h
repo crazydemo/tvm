@@ -21,8 +21,8 @@
  * \file tvm/relay/dataflow_matcher.h
  * \brief A pattern matcher for matching dataflow properties.
  */
-#ifndef TVM_RELAY_DATAFLOW_MATCHER_H_
-#define TVM_RELAY_DATAFLOW_MATCHER_H_
+#ifndef TVM_RELAY_PARTITION_DNNL_GRAPH_H_
+#define TVM_RELAY_PARTITION_DNNL_GRAPH_H_
 
 #include <tvm/relay/dataflow_pattern.h>
 #include <tvm/relay/dataflow_pattern_functor.h>
@@ -39,7 +39,7 @@ class DFPatternCallback;
  * \brief Base type of all dataflow pattern callbacks.
  * \sa DFPatternCallback
  */
-class DFPatternCallbackNode : public Object {
+class DNNLDFPatternCallbackNode : public Object {
  public:
   /*! \brief Pattern this callback matches */
   DFPattern pattern;
@@ -56,8 +56,8 @@ class DFPatternCallbackNode : public Object {
     v->Visit("rewrite_once", &rewrite_once);
   }
 
-  static constexpr const char* _type_key = "DFPatternCallbackNode";
-  TVM_DECLARE_BASE_OBJECT_INFO(DFPatternCallbackNode, Object);
+  static constexpr const char* _type_key = "DNNLDFPatternCallbackNode";
+  TVM_DECLARE_BASE_OBJECT_INFO(DNNLDFPatternCallbackNode, Object);
 };
 
 /*!
@@ -68,7 +68,7 @@ class DFPatternCallback : public ObjectRef {
  public:
   TVM_DLL DFPatternCallback(DFPattern pattern, PackedFunc callback, bool require_type,
                             bool rewrite_once = false);
-  TVM_DEFINE_OBJECT_REF_METHODS(DFPatternCallback, ObjectRef, DFPatternCallbackNode);
+  TVM_DEFINE_OBJECT_REF_METHODS(DFPatternCallback, ObjectRef, DNNLDFPatternCallbackNode);
 };
 
 /*!
@@ -82,7 +82,7 @@ class DFPatternCallback : public ObjectRef {
  *
  * \return Return the paritioned Expr.
  */
-Expr PartitionDNNLPattern(Expr expr);
+std::vector<std::pair<std::string, DFPattern>> PartitionDNNLPattern(Expr expr);
 
 }  // namespace relay
 }  // namespace tvm

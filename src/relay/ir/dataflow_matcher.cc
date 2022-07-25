@@ -575,7 +575,7 @@ class MatchExtractor : public ExprMutator {
 
 /*! \brief Group expressions that match the pattern */
 const std::unordered_map<int, PatternGrouper::Group>& PatternGrouper::GroupMatches(
-    const DFPattern& pattern, const Expr& pre) {
+    const DFPattern& pattern, const Expr& pre, const bool only_match_once) {
   groups_.clear();
   gid_assignments_.clear();
 
@@ -584,11 +584,11 @@ const std::unordered_map<int, PatternGrouper::Group>& PatternGrouper::GroupMatch
   std::unique_ptr<IndexedGraph<Expr>> expr_graph = CreateIndexedGraph(pre);
   DFPatternMatcher matcher(expr_graph.get());
   matcher_ = &matcher;
-  this->VisitExprs();
+  this->VisitExprs(only_match_once);
   return this->groups_;
 }
 
-void PatternGrouper::VisitExprs() {
+void PatternGrouper::VisitExprs(const bool only_match_once) {
   std::unordered_set<Expr, ObjectPtrHash, ObjectPtrEqual> pre_partitioned;
   for (PostDfsIndex i = matcher_->size(); i != 0; --i) {
     PostDfsIndex index = i - 1;
@@ -603,6 +603,7 @@ void PatternGrouper::VisitExprs() {
       }
       if (pre_partitioned.count(current) == 0 && matcher_->Match(pattern_, current)) {
         CreateGroup(current);
+        if (only_match_once) break;
       }
     }
   }
@@ -863,14 +864,14 @@ TVM_REGISTER_GLOBAL("relay.dataflow_pattern.rewrite").set_body_typed(RewritePatt
 class PatternPartitioner : protected MixedModeMutator {
  public:
   Expr Partition(const DFPattern& pattern, const Expr& pre, const Map<String, ObjectRef>& attrs,
-                 PackedFunc check) {
+                 PackedFunc check, const bool only_match_once = false) {
     if (pattern.as<FunctionPatternNode>()) {
       LOG(WARNING) << "Partioning a Function that isn't called doesn't make sense, skipping"
                    << pattern;
       return pre;
     }
     auto grouper = PatternGrouper();
-    groups_ = grouper.GroupMatches(pattern, pre);
+    groups_ = grouper.GroupMatches(pattern, pre, only_match_once);
     gid_assignments_ = grouper.GetGIDAssignments();
     attrs_ = attrs;
     check_ = check;
@@ -908,13 +909,13 @@ class PatternPartitioner : protected MixedModeMutator {
 };
 
 Expr PartitionPattern(DFPattern pattern, Expr expr, Map<String, ObjectRef> attrs,
-                      PackedFunc check) {
-  return PatternPartitioner().Partition(pattern, expr, attrs, check);
+                      PackedFunc check, const bool only_match_once) {
+  return PatternPartitioner().Partition(pattern, expr, attrs, check, only_match_once);
 }
 
 TVM_REGISTER_GLOBAL("relay.dataflow_pattern.partition")
     .set_body_typed([](DFPattern pattern, Expr expr, Map<String, ObjectRef> attrs,
-                       PackedFunc check) { return PartitionPattern(pattern, expr, attrs, check); });
+                       PackedFunc check, const bool only_match_once) { return PartitionPattern(pattern, expr, attrs, check, only_match_once); });
 
 }  // namespace relay
 }  // namespace tvm

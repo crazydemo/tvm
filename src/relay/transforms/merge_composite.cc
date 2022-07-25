@@ -46,13 +46,19 @@ Function InferType(const Function& expr, const IRModule& m) {
 Expr MergeComposite(const Function& func, const Array<runtime::String>& pattern_names,
                     const Array<DFPattern>& patterns, const std::vector<PackedFunc>& checks,
                     const IRModule& m) {
+  std::cout<<"===============Merge Composite=================="<<std::endl;
   ICHECK_EQ(pattern_names.size(), patterns.size());
   Function merged_func = func;
   // merge the patterns one-by-one in order
+
   for (size_t i = 0; i < patterns.size(); i++) {
+    std::cout<<pattern_names[i]<<std::endl;
+    std::cout<<patterns[i]<<std::endl;
     Map<String, ObjectRef> attrs;
     attrs.Set("Composite", pattern_names[i]);
+    std::cout<<pattern_names[i]<<std::endl;
     merged_func = Downcast<Function>(PartitionPattern(patterns[i], merged_func, attrs, checks[i]));
+    std::cout<<merged_func<<std::endl;
     merged_func = InferType(merged_func, m);
   }
   return std::move(merged_func);
