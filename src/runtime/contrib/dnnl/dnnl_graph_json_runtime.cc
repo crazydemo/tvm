@@ -34,7 +34,6 @@
 #include "../json/json_runtime.h"
 #include "oneapi/dnnl/dnnl_graph.hpp"
 #include "dnnl.hpp"
-#include "dnnl_graph_utils.h"
 
 namespace tvm {
 namespace runtime {
