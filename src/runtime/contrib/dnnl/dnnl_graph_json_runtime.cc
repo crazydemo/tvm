@@ -105,6 +105,41 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       {"add", op::kind::Add},
   };
 
+  std::map<std::string, std::string> op_map{
+      {"bias", "nn.bias_add"},
+      {"relu", "nn.relu"},
+      {"tanh", "tanh"},
+      {"sigmoid", "sigmoid"},
+      {"nn.deconv2d", "nn.conv2d_transpose"},
+      {"nn.deconv3d", "nn.conv3d_transpose"},
+  };
+
+  std::vector<std::string> ParsingOpList(const std::string& pattern_name,
+                                         std::string interval = "_") {
+    ICHECK_NE(pattern_name, "");
+    std::vector<std::string> op_list;
+    size_t pos = 0, start = 0;
+
+    while ((pos = pattern_name.find(interval, start)) != std::string::npos) {
+      std::string op_name = pattern_name.substr(start, pos - start);
+      std::cout << "parsing list op_name: " << op_name << std::endl;
+      if (op_name.find("dnnl") != std::string::npos) {
+        op_name.replace(op_name.find("dnnl"), 4, "nn");
+        if (op_name.find("deconv") != std::string::npos) {
+          op_name = op_map[op_name];
+        }
+      } else {
+        op_name = op_map[op_name];
+      }
+      if (pos > start) op_list.push_back(op_name);
+      start = pos + interval.size();
+    }
+    if (pattern_name.size() > start) {
+      op_list.push_back(op_map[pattern_name.substr(start)]);
+    }
+    return op_list;
+  }
+
   // Build up the engine based on the input graph.
   void BuildEngine() {
     /// create a new engine and stream
@@ -112,25 +147,39 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     strm_ = {eng_};
     graph g(engine::kind::cpu);
     size_t nid;
+    size_t opid = 0;
     // Build subgraph engine.
     for (nid = 0; nid < nodes_.size(); ++nid) {
       const auto& node = nodes_[nid];
       if (node.GetOpType() == "kernel") {
         ICHECK_EQ(node.GetOpType(), "kernel");
-        auto op_name = node.GetOpName();
-        if (op_name == "nn.conv2d") {
-          Convolution(nid, g);
-        } else if (elt_name2kind.count(op_name)) {
-          Eltwise(nid, g);
-        } else if (binary_name2kind.count(op_name)) {
-          Binary(nid, g);
-        } else if (op_name == "nn.bias_add") {
-          BiasAdd(nid, g);
-        } else if (op_name == "nn.max_pool2d") {
-          Pooling(nid, g);
-        } else {
-          LOG(FATAL) << "Unsupported op: " << op_name;
-        }
+        auto pat_name = node.GetOpName();
+        std::vector<std::string> op_vec = ParsingOpList(pat_name);
+        std::vector<logical_tensor> input_descs = GetInputs(nid);
+          for (auto op_name : op_vec) {
+            std::vector<logical_tensor> cur_ins;
+            logical_tensor output_desc;
+            // if (tmp_end_.get_mem_size()) {
+            //   cur_ins.push_back(tmp_end_);
+            // }
+            std::cout << "op_name: " << op_name << std::endl;
+            if (op_name == "nn.conv2d") {
+              GetCurArgs(cur_ins, input_descs, output_desc, 2);
+              Convolution(nid, input_descs, output_desc, opid, g);
+              // } else if (elt_name2kind.count(op_name)) {
+              //   Eltwise(nid, g);
+              // } else if (binary_name2kind.count(op_name)) {
+              //   Binary(nid, g);
+            } else if (op_name == "nn.bias_add") {
+              GetCurArgs(cur_ins, input_descs, output_desc, 2);
+              BiasAdd(nid, input_descs, output_desc, opid, g);
+              // } else if (op_name == "nn.max_pool2d") {
+              //   Pooling(nid, g);
+            } else {
+              LOG(FATAL) << "Unsupported op: " << op_name;
+            }
+            opid += 1;
+          }
       }
     }
     op end {nid + 1, op::kind::End, {tmp_end_}, {}, "end" + std::to_string(nid + 1)};
@@ -162,13 +211,11 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       }
   }
 
-  void Convolution(const size_t& nid, graph& g) {
+  void Convolution(const size_t& nid, const std::vector<logical_tensor>& input_descs,
+                   const logical_tensor& output_desc, const size_t& opid, graph& g) {
     auto node = nodes_[nid];
 
     // Setup attributes.
-    auto src_desc = GetInput(nid, 0);
-    auto wgh_desc = GetInput(nid, 1);
-    auto dst_desc = GetOutput(nid, 0);
     auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
     auto dilates = GetNodeAttr<std::vector<int64_t>>(node, "dilation");
     auto padding = GetNodeAttr<std::vector<int64_t>>(node, "padding");
@@ -181,9 +228,8 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
     std::string filter_format = regex_replace(kernel_layout, regex("(D?)(H?)W"), "X");
     /// create op conv
-    std::cout<<"conv" + std::to_string(nid)<<std::endl;
-    op conv {nid, op::kind::Convolution, {src_desc, wgh_desc},
-            {dst_desc}, "conv" + std::to_string(nid)};
+    std::cout << "conv" + std::to_string(opid) << std::endl;
+    op conv{opid, op::kind::Convolution, input_descs, {output_desc}, "conv" + std::to_string(opid)};
     conv.set_attr<std::vector<int64_t>>("strides", strides);
     conv.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
     conv.set_attr<std::vector<int64_t>>("pads_end", padding_r);
@@ -195,94 +241,89 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     /// add the ops to the graph
     g.add_op(conv);
 
-    tmp_end_ = dst_desc;
+    tmp_end_ = output_desc;
   }
 
-  void Eltwise(const size_t& nid, graph& g) {
+  // void Eltwise(const size_t& nid, graph& g) {
+  //   auto node = nodes_[nid];
+  //   auto op_name = node.GetOpName();
+  //   auto op_kind = elt_name2kind.at(op_name);
+
+  //   // Setup attributes.
+  //   auto src_desc = GetInput(nid, 0);
+  //   auto dst_desc = GetOutput(nid, 0);
+
+  //   /// create op conv
+  //   std::cout<<op_name + std::to_string(nid)<<std::endl;
+  //   op elt {nid, op_kind, {src_desc}, {dst_desc}, op_name + std::to_string(nid)};
+  //   /// add the ops to the graph
+  //   g.add_op(elt);
+
+  //   tmp_end_ = dst_desc;
+  // }
+
+  // void Binary(const size_t& nid, graph& g) {
+  //   auto node = nodes_[nid];
+  //   auto op_name = node.GetOpName();
+  //   auto op_kind = binary_name2kind.at(op_name);
+
+  //   // Setup attributes.
+  //   auto src1_desc = GetInput(nid, 0);
+  //   auto src2_desc = GetInput(nid, 1);
+  //   auto dst_desc = GetOutput(nid, 0);
+
+  //   /// create op conv
+  //   std::cout<<op_name + std::to_string(nid)<<std::endl;
+  //   op elt {nid, op_kind, {src1_desc, src2_desc}, {dst_desc}, op_name + std::to_string(nid)};
+  //   /// add the ops to the graph
+  //   g.add_op(elt);
+
+  //   tmp_end_ = dst_desc;
+  // }
+
+  void BiasAdd(const size_t& nid, const std::vector<logical_tensor>& input_descs,
+               const logical_tensor& output_desc, const size_t& opid, graph& g) {
     auto node = nodes_[nid];
-    auto op_name = node.GetOpName();
-    auto op_kind = elt_name2kind.at(op_name);
-
-    // Setup attributes.
-    auto src_desc = GetInput(nid, 0);
-    auto dst_desc = GetOutput(nid, 0);
-
+    // auto op_name = node.GetOpName();
     /// create op conv
-    std::cout<<op_name + std::to_string(nid)<<std::endl;
-    op elt {nid, op_kind, {src_desc}, {dst_desc}, op_name + std::to_string(nid)};
+    std::cout << "bias_add" << std::to_string(opid) << std::endl;
+    op elt{opid, op::kind::BiasAdd, input_descs, {output_desc}, "bias_add" + std::to_string(opid)};
     /// add the ops to the graph
     g.add_op(elt);
 
-    tmp_end_ = dst_desc;
+    tmp_end_ = output_desc;
   }
 
-  void Binary(const size_t& nid, graph& g) {
-    auto node = nodes_[nid];
-    auto op_name = node.GetOpName();
-    auto op_kind = binary_name2kind.at(op_name);
+  // void Pooling(const size_t& nid, graph& g) {
+  //   auto node = nodes_[nid];
 
-    // Setup attributes.
-    auto src1_desc = GetInput(nid, 0);
-    auto src2_desc = GetInput(nid, 1);
-    auto dst_desc = GetOutput(nid, 0);
+  //   // Setup attributes.
+  //   auto src_desc = GetInput(nid, 0);
+  //   auto dst_desc = GetOutput(nid, 0);
+  //   auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
+  //   auto kernel = GetNodeAttr<std::vector<int64_t>>(node, "pool_size");
+  //   auto dilates = GetNodeAttr<std::vector<int64_t>>(node, "dilation");
+  //   auto padding = GetNodeAttr<std::vector<int64_t>>(node, "padding");
+  //   std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
+  //   std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
+  //   auto data_layout = GetNodeAttr<std::string>(node, "layout");
+  //   // todo @crazydemo check the validaty of layout string
+  //   std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+  //   /// create op conv
+  //   std::cout<<"pool" + std::to_string(nid)<<std::endl;
+  //   op pool {nid, op::kind::MaxPool, {src_desc}, {dst_desc}, "pool" + std::to_string(nid)};
+  //   pool.set_attr<std::vector<int64_t>>("strides", strides);
+  //   pool.set_attr<std::vector<int64_t>>("kernel", kernel);
+  //   pool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+  //   pool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+  //   pool.set_attr<std::vector<int64_t>>("dilations", dilates);
+  //   pool.set_attr<std::string>("data_format", data_format);  
 
-    /// create op conv
-    std::cout<<op_name + std::to_string(nid)<<std::endl;
-    op elt {nid, op_kind, {src1_desc, src2_desc}, {dst_desc}, op_name + std::to_string(nid)};
-    /// add the ops to the graph
-    g.add_op(elt);
+  //   /// add the ops to the graph
+  //   g.add_op(pool);
 
-    tmp_end_ = dst_desc;
-  }
-
-  void BiasAdd(const size_t& nid, graph& g) {
-    auto node = nodes_[nid];
-    auto op_name = node.GetOpName();
-
-    // Setup attributes.
-    auto src1_desc = GetInput(nid, 0);
-    auto src2_desc = GetInput(nid, 1);
-    auto dst_desc = GetOutput(nid, 0);
-
-    /// create op conv
-    std::cout<<op_name + std::to_string(nid)<<std::endl;
-    op elt {nid, op::kind::BiasAdd, {src1_desc, src2_desc}, {dst_desc}, op_name + std::to_string(nid)};
-    /// add the ops to the graph
-    g.add_op(elt);
-
-    tmp_end_ = dst_desc;
-  }
-
-  void Pooling(const size_t& nid, graph& g) {
-    auto node = nodes_[nid];
-
-    // Setup attributes.
-    auto src_desc = GetInput(nid, 0);
-    auto dst_desc = GetOutput(nid, 0);
-    auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
-    auto kernel = GetNodeAttr<std::vector<int64_t>>(node, "pool_size");
-    auto dilates = GetNodeAttr<std::vector<int64_t>>(node, "dilation");
-    auto padding = GetNodeAttr<std::vector<int64_t>>(node, "padding");
-    std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
-    std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
-    auto data_layout = GetNodeAttr<std::string>(node, "layout");
-    // todo @crazydemo check the validaty of layout string
-    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
-    /// create op conv
-    std::cout<<"pool" + std::to_string(nid)<<std::endl;
-    op pool {nid, op::kind::MaxPool, {src_desc}, {dst_desc}, "pool" + std::to_string(nid)};
-    pool.set_attr<std::vector<int64_t>>("strides", strides);
-    pool.set_attr<std::vector<int64_t>>("kernel", kernel);
-    pool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
-    pool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
-    pool.set_attr<std::vector<int64_t>>("dilations", dilates);
-    pool.set_attr<std::string>("data_format", data_format);  
-
-    /// add the ops to the graph
-    g.add_op(pool);
-
-    tmp_end_ = dst_desc;
-  }
+  //   tmp_end_ = dst_desc;
+  // }
 
   void Compile(graph& g) {
     // Partition the graph.
@@ -376,44 +417,46 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     return AttrConvert<T>(attr);
   }
 
-  logical_tensor GetInput(const size_t& nid, const int idx, layout_type lt = layout_type::undef) {
-    if (idx == -1) return {};  // -1 reserved value for empty input.
-
+  std::vector<logical_tensor> GetInputs(const size_t& nid, layout_type lt = layout_type::undef) {
     const JSONGraphNode& node = nodes_[nid];
 
-    ICHECK_LT(idx, node.GetInputs().size());
-    auto data_entry = node.GetInputs()[idx];
-
-    auto shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
-    auto dtype = nodes_[data_entry.id_].GetOpDataType()[data_entry.index_];
-    auto eid = node_row_ptr_[data_entry.id_] + data_entry.index_;
-    if (entry_out_undef_desc_.count(eid))
-      return  entry_out_undef_desc_[eid];
-    // todo @crazydemo alter dtype.
-    // auto dgraph_dtype = dtype_dl2dgraph(dtype);
-    logical_tensor undef_res {eid, data_type::f32, shape, lt};
-    logical_tensor strided_res {eid, data_type::f32, shape, layout_type::strided};
-    entry_out_undef_desc_[eid] = undef_res;
-    entry_out_strided_desc_[eid] = strided_res;
-    return undef_res;
+    ICHECK_GT(node.GetInputs().size(), 0);
+    std::vector<logical_tensor> inputs;
+    for (auto data_entry : node.GetInputs()) {
+      auto shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+      auto dtype = nodes_[data_entry.id_].GetOpDataType()[data_entry.index_];
+      auto eid = node_row_ptr_[data_entry.id_] + data_entry.index_;
+      std::cout << "input: " << eid << std::endl;
+      if (entry_out_undef_desc_.count(eid)) inputs.push_back(entry_out_undef_desc_[eid]);
+      // todo @crazydemo alter dtype.
+      // auto dgraph_dtype = dtype_dl2dgraph(dtype);
+      logical_tensor undef_res{eid, data_type::f32, shape, lt};
+      logical_tensor strided_res{eid, data_type::f32, shape, layout_type::strided};
+      entry_out_undef_desc_[eid] = undef_res;
+      entry_out_strided_desc_[eid] = strided_res;
+      inputs.push_back(undef_res);
+    }
+    return inputs;
   }
 
-  logical_tensor GetOutput(const size_t& nid, const int idx, layout_type lt = layout_type::undef) {
-    if (idx == -1) return {};  // -1 reserved value for empty input.
+  void GetCurArgs(std::vector<logical_tensor>& inputs,
+                  std::vector<logical_tensor>& pat_inputs, logical_tensor& output, const size_t& in_num) {
+    if (tmp_end_.get_mem_size()) {
+      inputs.push_back(tmp_end_);
+    }
+    int add_num = 2 - inputs.size();
+    inputs.insert(inputs.end(), pat_inputs.begin(), pat_inputs.begin() + add_num);
+    pat_inputs.erase(pat_inputs.begin(), pat_inputs.begin() + add_num);
+    data_type dnnl_dtype = inputs[-1].get_data_type();
+    logical_tensor output_desc =
+        GetOutputs(inputs[0].get_id() + 100, dnnl_dtype, 4);
+  }
 
-    const JSONGraphNode& node = nodes_[nid];
-
-    ICHECK_LT(idx, node.GetNumOutput());
-    auto shape = node.GetOpShape()[idx];
-    auto dtype = node.GetOpDataType()[idx];
-    auto eid = node_row_ptr_[nid] + static_cast<uint32_t>(idx);
-    if (entry_out_undef_desc_.count(eid))
-      return  entry_out_undef_desc_[eid];
-
-    ICHECK(data_entry_[eid] == nullptr);
-    // auto dgraph_dtype = dtype_dl2dgraph(dtype);
-    logical_tensor undef_res {eid, data_type::f32, shape, lt};
-    logical_tensor strided_res {eid, data_type::f32, shape, layout_type::strided};
+  logical_tensor GetOutputs(const size_t& eid, const data_type& dnnl_dtype, const int dims, layout_type lt = layout_type::undef) {
+    std::cout << "output: " << eid << std::endl;
+    std::cout <<"dims: "<< dims << std::endl;
+    logical_tensor undef_res{eid, dnnl_dtype, dims, lt};
+    logical_tensor strided_res{eid, dnnl_dtype, dims, layout_type::strided};
     entry_out_undef_desc_[eid] = undef_res;
     entry_out_strided_desc_[eid] = strided_res;
     return undef_res;
