@@ -26,9 +26,10 @@
  */
 
 #include <tvm/relay/analysis.h>
-#include <tvm/relay/partition_dnnl_graph.h>
+#include <tvm/relay/dataflow_matcher.h>
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/op_attr_types.h>
+#include <tvm/relay/partition_dnnl_graph.h>
 #include <tvm/relay/transform.h>
 #include <tvm/te/operation.h>
 
@@ -47,9 +48,26 @@ Expr MergeDNNLGraph(const Function& func, const IRModule& m) {
   Function merged_func = func;
   // merge the patterns one-by-one in order
   Map<String, ObjectRef> attrs;
-  auto dnnl_partition = PartitionDNNLPattern(merged_func);
-  attrs.Set("Composite", dnnl_partition);
-  merged_func = InferType(merged_func, m);
+  std::vector<std::pair<runtime::String, DFPattern>> dnnl_partitions =
+      PartitionDNNLPattern(merged_func);
+  ICHECK_GT(dnnl_partitions.size(), 0);
+  for (int i = dnnl_partitions.size() - 1; i >= 0; --i) {
+    std::cout << "======================================="<<std::endl;
+    std::cout<<i<<std::endl;
+    std::cout << dnnl_partitions[i].first << std::endl;
+    std::cout << dnnl_partitions[i].second << std::endl;
+    Map<String, ObjectRef> attrs;
+    attrs.Set("Composite", dnnl_partitions[i].first);
+    std::cout<<"setted attrs"<<std::endl;
+    merged_func = Downcast<Function>(PartitionPattern(dnnl_partitions[i].second, merged_func,
+    attrs, {}, true));
+    std::cout << merged_func << std::endl;
+    merged_func = InferType(merged_func, m);
+  }
+  // attrs.Set("Composite", dnnl_partition[0].first);
+  // merged_func = InferType(merged_func, m);
+  // attrs.Set("Composite", dnnl_partition);
+  // merged_func = InferType(merged_func, m);
   return std::move(merged_func);
 }
 

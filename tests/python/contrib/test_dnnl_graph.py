@@ -107,8 +107,9 @@ def partition_for_dnnl(mod, params=None, alter_layout=True, prune_subgraphs=True
     byoc_seq = tvm.transform.Sequential(
         [
             transform.MergeDNNLGraph(),
+            # transform.MergeComposite(dnnl.pattern_table()),
             tvm.transform.PrintIR(),
-            # transform.AnnotateTarget("dnnl"),
+            transform.AnnotateTarget("dnnl"),
             transform.MergeCompilerRegions(),
             transform.PartitionGraph(),
         ]

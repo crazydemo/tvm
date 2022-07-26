@@ -47,71 +47,117 @@ using std::regex;
  *
  * The class uses PatternGrouper to support the dominator pattern.
  */
-class PatternPartitioner : protected MixedModeMutator {
+class DNNLPatternPartitioner : protected MixedModeMutator {
  using data_type = logical_tensor::data_type;
  using layout_type = logical_tensor::layout_type;
- public:
-  Expr Partition(const Expr& pre) {
-    std::unique_ptr<IndexedGraph<Expr>> expr_graph = CreateIndexedGraph(pre);
-    std::cout<<"expr_graph: "<<expr_graph->ToString()<<std::endl;
-    std::cout<<expr_graph->size()<<std::endl;
 
-    graph dnnl_graph(engine::kind::cpu);
-    for (PostDfsIndex index = 0; index < expr_graph->size() - 1; ++index) { // overlook the function pattern
-      auto node = expr_graph->index_to_node(index);
-      // std::cout<<index<<", "<<node->ref()<<std::endl;
-      if (node->inputs_.size() == 0) continue;
+ std::map<std::string, std::string> op_map{
+     {"nn.bias_add", "bias"},
+     {"nn.conv2d", "conv2d"},
+     {"tanh", "tanh"},
+     {"sigmoid", "sigmoid"},
+     {"nn.deconv2d", "nn.conv2d_transpose"},
+     {"nn.deconv3d", "nn.conv3d_transpose"},
+ };
 
-      const CallNode* call = node->ref().as<CallNode>();
+public:
+ std::vector<std::pair<runtime::String, DFPattern>> Partition(const Expr& pre) {
+   std::unique_ptr<IndexedGraph<Expr>> expr_graph = CreateIndexedGraph(pre);
+   std::cout << "expr_graph: " << expr_graph->ToString() << std::endl;
+   std::cout << expr_graph->size() << std::endl;
 
-      // Get input descriptor.
-      std::vector<logical_tensor> inputs;
-      std::vector<int64_t> dnnl_shape;
-      data_type dnnl_dtype = data_type::undef;
-      for (PostDfsIndex i = 1; i < node->inputs_.size(); ++i) {
-        Expr arg = call->args[i-1];
-        PostDfsIndex idx = node->inputs_[i]->index_;
-        dnnl_shape = GetShape(arg->checked_type());
-        dnnl_dtype = GetDtype(arg->checked_type());
-        logical_tensor input {idx, dnnl_dtype, dnnl_shape, layout_type::undef};
-        inputs.push_back(input);
-      }
-      
-      // Get output descriptor.
-      PostDfsIndex next_call_idx = node->outputs_[0]->index_;
-      auto next_node = expr_graph->index_to_node(next_call_idx);
-      logical_tensor output {index, dnnl_dtype, dnnl_shape.size(), layout_type::undef};
-      if (auto next_call = next_node->ref().as<CallNode>()) {
-        Expr arg = next_call->args[0];
-        dnnl_shape = GetShape(arg->checked_type());
-        dnnl_dtype = GetDtype(arg->checked_type());
-        output = {index, dnnl_dtype, dnnl_shape, layout_type::undef};
-      }
-      
-      //Get OP.
-      PostDfsIndex op_idx = node->inputs_[0]->index_;
-      if (IsOp(call, "nn.conv2d")) {
-        Conv2d(call, op_idx, dnnl_graph, inputs, output);
-      } else if (IsOp(call, "nn.bias_add")) {
-        BiasAdd(call, op_idx, dnnl_graph, inputs, output);
-      } else {
-        LOG_FATAL << "Unsupported DNNL Graph Op";
-      }
-    }
+   graph dnnl_graph(engine::kind::cpu);
+   for (PostDfsIndex index = 0; index < expr_graph->size() - 1;
+        ++index) {  // overlook the function pattern
+     auto node = expr_graph->index_to_node(index);
+     // std::cout<<index<<", "<<node->ref()<<std::endl;
+     if (node->inputs_.size() == 0) continue;
 
-    // Get partitions.
-    std::cout<<"dnnl graph compiling ..."<<std::endl;
-    auto partitions = dnnl_graph.get_partitions();
-    if (partitions.size() < 1)
-        throw std::runtime_error(
-                "cpu_simple_pattern_f32: incorrect partition number");
-    std::cout << "Number of returned partitions: " << partitions.size() << "\n";
-    for (size_t i = 0; i < partitions.size(); ++i) {
-        std::cout << "Partition[" << partitions[i].get_id()
-                  << "]'s supporting status: "
-                  << (partitions[i].is_supported() ? "true" : "false") << "\n";
-    }
-    return pre;
+     const CallNode* call = node->ref().as<CallNode>();
+
+     // Get input descriptor.
+     std::vector<logical_tensor> inputs;
+     std::vector<int64_t> dnnl_shape;
+     data_type dnnl_dtype = data_type::undef;
+     for (PostDfsIndex i = 1; i < node->inputs_.size(); ++i) {
+       Expr arg = call->args[i - 1];
+       PostDfsIndex idx = node->inputs_[i]->index_;
+       dnnl_shape = GetShape(arg->checked_type());
+       dnnl_dtype = GetDtype(arg->checked_type());
+       logical_tensor input{idx, dnnl_dtype, dnnl_shape, layout_type::undef};
+       inputs.push_back(input);
+     }
+
+     // Get output descriptor.
+     PostDfsIndex next_call_idx = node->outputs_[0]->index_;
+     auto next_node = expr_graph->index_to_node(next_call_idx);
+     logical_tensor output{index, dnnl_dtype, dnnl_shape.size(), layout_type::undef};
+     if (auto next_call = next_node->ref().as<CallNode>()) {
+       Expr arg = next_call->args[0];
+       dnnl_shape = GetShape(arg->checked_type());
+       dnnl_dtype = GetDtype(arg->checked_type());
+       output = {index, dnnl_dtype, dnnl_shape, layout_type::undef};
+     }
+
+     // Get OP.
+     PostDfsIndex op_idx = index;
+     if (IsOp(call, "nn.conv2d")) {
+       Conv2d(call, op_idx, dnnl_graph, inputs, output);
+     } else if (IsOp(call, "nn.bias_add")) {
+       BiasAdd(call, op_idx, dnnl_graph, inputs, output);
+     } else {
+       LOG_FATAL << "Unsupported DNNL Graph Op";
+     }
+   }
+
+   // Get partitions.
+   std::cout << "dnnl graph compiling ..." << std::endl;
+   std::vector<std::pair<runtime::String, DFPattern>> pat_vec;
+   auto partitions = dnnl_graph.get_partitions();
+   if (partitions.size() < 1)
+     LOG_WARNING << "cannot be partitioned by DNNL Graph, will then be build with native codegen";
+
+   /*** Convert DNNL_Graph partition into TVM pattern ***/
+   for (size_t i = 0; i < partitions.size(); ++i) {
+     std::cout << "Partition[" << partitions[i].get_id()
+               << "]'s supporting status: " << (partitions[i].is_supported() ? "true" : "false")
+               << "\n";
+     auto p = partitions[i];
+     std::unordered_map<int, DFPattern> pat_map;
+     for (auto i_desc : p.get_in_ports()) {
+       auto pi_idx = i_desc.get_id();
+       auto pi_node = expr_graph->index_to_node(pi_idx);
+       auto pi_pat = IsWildcard();
+      //  if (auto call = pi_node->ref().as<ConstantNode>()) {
+      //    pi_pat = IsConstant();
+      //  }
+       pat_map.insert(std::make_pair(pi_idx, pi_pat));
+     }
+
+     ICHECK_GE(p.get_ops().size(), 1);
+     DFPattern pat;
+     runtime::String pat_name = "dnnl.";
+     for (auto op_idx : p.get_ops()) {
+       std::cout << "op_idx:" << op_idx << std::endl;
+       auto op_node = expr_graph->index_to_node(op_idx);
+       ICHECK(op_node->ref().as<CallNode>());
+       ICHECK_GE(op_node->inputs_.size(), 2);
+       std::vector<DFPattern> input_pats;
+       for (size_t j = 1; j < op_node->inputs_.size(); ++j) {
+         auto pi_idx = op_node->inputs_[j]->index_;
+         ICHECK(pat_map.count(pi_idx));
+         input_pats.push_back(pat_map[pi_idx]);
+       }
+       auto op = op_node->ref().as<CallNode>()->op;
+       auto op_name = op.as<OpNode>()->name;
+       pat_name = pat_name + op_map[op_name] + "_";
+       pat = relay::IsOp(op_name)(input_pats);
+       pat_map.insert(std::make_pair(op_idx, pat));
+     }
+     std::cout << "pat: " << pat << std::endl;
+     pat_vec.push_back(std::make_pair(pat_name, pat));
+   }
+   return pat_vec;
   }
 
  protected:
@@ -221,12 +267,9 @@ class PatternPartitioner : protected MixedModeMutator {
   }
 };
 
-Expr PartitionDNNLPattern(Expr expr) {
-  return PatternPartitioner().Partition(expr);
+std::vector<std::pair<runtime::String, DFPattern>> PartitionDNNLPattern(Expr expr) {
+  return DNNLPatternPartitioner().Partition(expr);
 }
-
-TVM_REGISTER_GLOBAL("relay.dataflow_pattern.partition_dnnl_pattern")
-    .set_body_typed([](Expr expr) { return PartitionDNNLPattern(expr); });
 
 }  // namespace relay
 }  // namespace tvm

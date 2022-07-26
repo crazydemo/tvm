@@ -112,7 +112,8 @@ class PatternGrouper {
     return gid_assignments_;
   }
   /*! \brief Group expressions that match the pattern */
-  const std::unordered_map<int, Group>& GroupMatches(const DFPattern& pattern, const Expr& pre);
+  const std::unordered_map<int, Group>& GroupMatches(const DFPattern& pattern, const Expr& pre,
+                                                     const bool only_match_once = false);
 
  protected:
   /*! \brief Iteratively traverse the Expression in pre-order to find subgraphs
@@ -123,7 +124,7 @@ class PatternGrouper {
    * as matched and fail to catch the larger subgraph. This problem is fixed by using pre-order
    * traversal.
    */
-  void VisitExprs();
+  void VisitExprs(const bool only_match_once = false);
 
   /*! \brief Create a group based on a matched expression */
   void CreateGroup(const Expr& expr);

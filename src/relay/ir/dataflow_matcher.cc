@@ -575,7 +575,7 @@ class MatchExtractor : public ExprMutator {
 
 /*! \brief Group expressions that match the pattern */
 const std::unordered_map<int, PatternGrouper::Group>& PatternGrouper::GroupMatches(
-    const DFPattern& pattern, const Expr& pre) {
+    const DFPattern& pattern, const Expr& pre, const bool only_match_once) {
   groups_.clear();
   gid_assignments_.clear();
 
@@ -584,11 +584,11 @@ const std::unordered_map<int, PatternGrouper::Group>& PatternGrouper::GroupMatch
   std::unique_ptr<IndexedGraph<Expr>> expr_graph = CreateIndexedGraph(pre);
   DFPatternMatcher matcher(expr_graph.get());
   matcher_ = &matcher;
-  this->VisitExprs();
+  this->VisitExprs(only_match_once);
   return this->groups_;
 }
 
-void PatternGrouper::VisitExprs() {
+void PatternGrouper::VisitExprs(const bool only_match_once) {
   std::unordered_set<Expr, ObjectPtrHash, ObjectPtrEqual> pre_partitioned;
   for (PostDfsIndex i = matcher_->size(); i != 0; --i) {
     PostDfsIndex index = i - 1;
@@ -603,6 +603,7 @@ void PatternGrouper::VisitExprs() {
       }
       if (pre_partitioned.count(current) == 0 && matcher_->Match(pattern_, current)) {
         CreateGroup(current);
+        if (only_match_once) break;
       }
     }
   }
@@ -700,16 +701,17 @@ void PatternGrouper::CreateGroup(const Expr& expr) {
   group.function = Function(params, body, NullValue<Type>(), Array<TypeVar>());
   VLOG(1) << "Candidate extracted function:" << std::endl << PrettyPrint(group.function);
   group.name = extractor.GetName();
-  // Check to make sure we aren't overlapping with another group or creating an invalid fusion
-  // The MatchExtractor will create a new graph by replacing nodes that match the inputs of the
-  // pattern with the input FunctionVar* Variables. The resulting memoization map will only
-  // contain nodes in the expression that matched the pattern. If a non-input node of the pattern
-  // (i.e., some piece of computation) overlaps with the nodes in a previous group, we'll have a
-  // situation where we try to rewrite the same node twice in the second rewriting or parition
-  // pass. This isn't valid, so we check for it here. We ignore Ops, functions, and constants
-  // because they exist more globally outside of the fusion.
-  // Similiarly, if interior nodes in a group are used outside of the group fusing to a single
-  // output would create an invalid graph tranformation, so we block the creation of such groups.
+  // Check to make sure we aren't overlapping with another group or creating an invalid
+  // fusion The MatchExtractor will create a new graph by replacing nodes that match the
+  // inputs of the pattern with the input FunctionVar* Variables. The resulting memoization
+  // map will only contain nodes in the expression that matched the pattern. If a non-input
+  // node of the pattern (i.e., some piece of computation) overlaps with the nodes in a
+  // previous group, we'll have a situation where we try to rewrite the same node twice in
+  // the second rewriting or parition pass. This isn't valid, so we check for it here. We
+  // ignore Ops, functions, and constants because they exist more globally outside of the
+  // fusion. Similiarly, if interior nodes in a group are used outside of the group fusing to
+  // a single output would create an invalid graph tranformation, so we block the creation of
+  // such groups.
   auto memo = extractor.GetMemo();
   for (auto kv : memo) {
     VLOG(1) << "matched index " << matcher_->expr_to_node(kv.first)->index_;
@@ -863,14 +865,14 @@ TVM_REGISTER_GLOBAL("relay.dataflow_pattern.rewrite").set_body_typed(RewritePatt
 class PatternPartitioner : protected MixedModeMutator {
  public:
   Expr Partition(const DFPattern& pattern, const Expr& pre, const Map<String, ObjectRef>& attrs,
-                 PackedFunc check) {
+                 PackedFunc check, const bool only_match_once) {
     if (pattern.as<FunctionPatternNode>()) {
       LOG(WARNING) << "Partioning a Function that isn't called doesn't make sense, skipping"
                    << pattern;
       return pre;
     }
     auto grouper = PatternGrouper();
-    groups_ = grouper.GroupMatches(pattern, pre);
+    groups_ = grouper.GroupMatches(pattern, pre, only_match_once);
     gid_assignments_ = grouper.GetGIDAssignments();
     attrs_ = attrs;
     check_ = check;
@@ -894,8 +896,12 @@ class PatternPartitioner : protected MixedModeMutator {
 
   Expr DispatchVisitExpr(const Expr& pre) override {
     auto post = MixedModeMutator::DispatchVisitExpr(pre);
-    if (gid_assignments_.count(pre) && pre == groups_[gid_assignments_[pre]].root_node &&
-        static_cast<bool>(check_(pre))) {
+    bool checked = false;
+    if (check_ == NULL) checked = true;
+    else if (static_cast<bool>(check_(pre)))
+      checked = true;
+
+    if (gid_assignments_.count(pre) && pre == groups_[gid_assignments_[pre]].root_node && checked) {
       post = RewritePartition(groups_[gid_assignments_[pre]]);
     }
     return post;
@@ -907,14 +913,16 @@ class PatternPartitioner : protected MixedModeMutator {
   PackedFunc check_;
 };
 
-Expr PartitionPattern(DFPattern pattern, Expr expr, Map<String, ObjectRef> attrs,
-                      PackedFunc check) {
-  return PatternPartitioner().Partition(pattern, expr, attrs, check);
+Expr PartitionPattern(DFPattern pattern, Expr expr, Map<String, ObjectRef> attrs, PackedFunc check,
+                      const bool only_match_once) {
+  return PatternPartitioner().Partition(pattern, expr, attrs, check, only_match_once);
 }
 
 TVM_REGISTER_GLOBAL("relay.dataflow_pattern.partition")
-    .set_body_typed([](DFPattern pattern, Expr expr, Map<String, ObjectRef> attrs,
-                       PackedFunc check) { return PartitionPattern(pattern, expr, attrs, check); });
+    .set_body_typed([](DFPattern pattern, Expr expr, Map<String, ObjectRef> attrs, PackedFunc check,
+                       const bool only_match_once) {
+      return PartitionPattern(pattern, expr, attrs, check, only_match_once);
+    });
 
 }  // namespace relay
 }  // namespace tvm

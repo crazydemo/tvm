@@ -21,8 +21,8 @@
  * \file tvm/relay/dataflow_matcher.h
  * \brief A pattern matcher for matching dataflow properties.
  */
-#ifndef TVM_RELAY_DATAFLOW_MATCHER_H_
-#define TVM_RELAY_DATAFLOW_MATCHER_H_
+#ifndef TVM_RELAY_PARTITION_DNNL_GRAPH_H_
+#define TVM_RELAY_PARTITION_DNNL_GRAPH_H_
 
 #include <tvm/relay/dataflow_pattern.h>
 #include <tvm/relay/dataflow_pattern_functor.h>
@@ -34,55 +34,55 @@
 namespace tvm {
 namespace relay {
 
-class DFPatternCallback;
-/*!
- * \brief Base type of all dataflow pattern callbacks.
- * \sa DFPatternCallback
- */
-class DFPatternCallbackNode : public Object {
- public:
-  /*! \brief Pattern this callback matches */
-  DFPattern pattern;
-  /*! \brief Function to call when finding a matched expression */
-  PackedFunc function;
-  /*! \brief Require InferType to be run before the callback */
-  bool require_type;
-  /*! \brief Run the callback only once */
-  bool rewrite_once;
+// class DFPatternCallback;
+// /*!
+//  * \brief Base type of all dataflow pattern callbacks.
+//  * \sa DFPatternCallback
+//  */
+// class DFPatternCallbackNode : public Object {
+//  public:
+//   /*! \brief Pattern this callback matches */
+//   DFPattern pattern;
+//   /*! \brief Function to call when finding a matched expression */
+//   PackedFunc function;
+//   /*! \brief Require InferType to be run before the callback */
+//   bool require_type;
+//   /*! \brief Run the callback only once */
+//   bool rewrite_once;
 
-  void VisitAttrs(tvm::AttrVisitor* v) {
-    v->Visit("pattern", &pattern);
-    v->Visit("require_type", &require_type);
-    v->Visit("rewrite_once", &rewrite_once);
-  }
+//   void VisitAttrs(tvm::AttrVisitor* v) {
+//     v->Visit("pattern", &pattern);
+//     v->Visit("require_type", &require_type);
+//     v->Visit("rewrite_once", &rewrite_once);
+//   }
 
-  static constexpr const char* _type_key = "DFPatternCallbackNode";
-  TVM_DECLARE_BASE_OBJECT_INFO(DFPatternCallbackNode, Object);
-};
+//   static constexpr const char* _type_key = "DFPatternCallbackNode";
+//   TVM_DECLARE_BASE_OBJECT_INFO(DFPatternCallbackNode, Object);
+// };
 
-/*!
- * \brief Managed reference to dataflow pattern callbacks.
- * \sa DFPatternCallbackNode
- */
-class DFPatternCallback : public ObjectRef {
- public:
-  TVM_DLL DFPatternCallback(DFPattern pattern, PackedFunc callback, bool require_type,
-                            bool rewrite_once = false);
-  TVM_DEFINE_OBJECT_REF_METHODS(DFPatternCallback, ObjectRef, DFPatternCallbackNode);
-};
+// /*!
+//  * \brief Managed reference to dataflow pattern callbacks.
+//  * \sa DFPatternCallbackNode
+//  */
+// class DFPatternCallback : public ObjectRef {
+//  public:
+//   TVM_DLL DFPatternCallback(DFPattern pattern, PackedFunc callback, bool require_type,
+//                             bool rewrite_once = false);
+//   TVM_DEFINE_OBJECT_REF_METHODS(DFPatternCallback, ObjectRef, DFPatternCallbackNode);
+// };
 
-/*!
- * \brief Partition all matches of a DFPattern inside an Expr into separate Function calls
- *
- * \param pattern The pattern to match
- * \param expr The expression to patition
- * \param attrs A set of parameter names and values to apply to the partitioned function
- * \param check A callback function for checking more complicated properties of the matched
- * expressions, returns true if the match is accepted and false otherwise
- *
- * \return Return the paritioned Expr.
- */
-Expr PartitionDNNLPattern(Expr expr);
+// /*!
+//  * \brief Partition all matches of a DFPattern inside an Expr into separate Function calls
+//  *
+//  * \param pattern The pattern to match
+//  * \param expr The expression to patition
+//  * \param attrs A set of parameter names and values to apply to the partitioned function
+//  * \param check A callback function for checking more complicated properties of the matched
+//  * expressions, returns true if the match is accepted and false otherwise
+//  *
+//  * \return Return the paritioned Expr.
+//  */
+std::vector<std::pair<runtime::String, DFPattern>> PartitionDNNLPattern(Expr expr);
 
 }  // namespace relay
 }  // namespace tvm

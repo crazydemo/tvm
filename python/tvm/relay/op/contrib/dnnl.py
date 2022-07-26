@@ -280,24 +280,24 @@ def pattern_table():
         Created patterns.
     """
     dnnl_patterns = list()
-    dnnl_patterns.append(make_qnn_conv2d_pattern())
-    dnnl_patterns.append(make_qnn_dense_pattern())
+    # dnnl_patterns.append(make_qnn_conv2d_pattern())
+    # dnnl_patterns.append(make_qnn_dense_pattern())
 
-    elt_list = ["nn.relu", "tanh", "sigmoid", "gelu", None]
-    for with_bias in [True, False]:
+    elt_list = [None]#"nn.relu", "tanh", "sigmoid", "gelu", 
+    for with_bias in [True]:#, False
         for elt in elt_list:
             if not with_bias and not elt:
                 continue
             for conv_name in [
-                "nn.conv1d",
+                # "nn.conv1d",
                 "nn.conv2d",
-                "nn.conv3d",
-                "nn.conv2d_transpose",
-                "nn.conv3d_transpose",
+                # "nn.conv3d",
+                # "nn.conv2d_transpose",
+                # "nn.conv3d_transpose",
             ]:
                 if elt != "gelu":
                     dnnl_patterns.append(make_dnnl_pattern(conv_name, with_bias, elt))
-            dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, elt))
+            # dnnl_patterns.append(make_dnnl_pattern("nn.dense", with_bias, elt))
     return dnnl_patterns
 
 
