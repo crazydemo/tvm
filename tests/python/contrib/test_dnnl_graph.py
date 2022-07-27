@@ -158,7 +158,7 @@ def run_and_verify(mod, input, params, target, run_module, subgraph_num=None, te
     result_dict = dict()
     for mode in ["graph"]:#, "vm"
         configs = [
-            # (False, False, False),
+            (False, False, False),
             (True, False, False),
         ]
         # if test_bf16 and bf16_supported():
@@ -374,10 +374,10 @@ def test_conv2d_pattern(run_module, dtype="float32"):
     k_shape = (16, 32, 3, 3)
     activation_lst = [None]#, "relu"
     for a in activation_lst:
-        # conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
-        # conv2d = tvm.IRModule.from_expr(conv2d)
-        # config = conv2d, dic, param_lst
-        # run_and_verify_func(config, run_module=run_module, dtype=dtype)
+        conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
+        conv2d = tvm.IRModule.from_expr(conv2d)
+        config = conv2d, dic, param_lst
+        run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
         conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=a, dtype=dtype)
         conv2d_bias = tvm.IRModule.from_expr(conv2d_bias)
