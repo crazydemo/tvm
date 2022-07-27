@@ -372,7 +372,7 @@ def test_conv2d_weights_const(run_module, dtype="float32"):
 def test_conv2d_pattern(run_module, dtype="float32"):
     x_shape = (1, 32, 8, 8)
     k_shape = (16, 32, 3, 3)
-    activation_lst = [None]#, "relu"
+    activation_lst = ["relu",]#None, "relu"
     for a in activation_lst:
         conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
         conv2d = tvm.IRModule.from_expr(conv2d)

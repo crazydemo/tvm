@@ -185,7 +185,22 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       } else if (op_name == "nn.bias_add") {
         GetOpInputs(op_inputs, pat_inputs, 2, is_first);
         GetOutput(nid, op_output, is_last);
-        BiasAdd(nid, op_inputs, op_output, g);
+        op bias_add{graph_op_idx_,
+                    op::kind::BiasAdd,
+                    op_inputs,
+                    {op_output},
+                    "bias_add" + std::to_string(graph_op_idx_)};
+        g.add_op(bias_add);
+      } else if (op_name == "nn.relu") {
+        GetOpInputs(op_inputs, pat_inputs, 1, is_first);
+        GetOutput(nid, op_output, is_last);
+        std::cout << "relu input: " << op_inputs.size() << std::endl;
+        op relu{graph_op_idx_,
+                    op::kind::ReLU,
+                    op_inputs,
+                    {op_output},
+                    "relu" + std::to_string(graph_op_idx_)};
+        g.add_op(relu);
       } else {
         LOG(FATAL) << "Unsupported op: " << op_name;
       }
@@ -250,21 +265,36 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     conv.set_attr<std::string>("filter_format", filter_format);
     conv.set_attr<int64_t>("groups", groups);
 
+    std::cout << "strides: ";
+    for (auto i : strides) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_l: ";
+    for (auto i : padding_l) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_r: ";
+    for (auto i : padding_r) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "dilates: ";
+    for (auto i : dilates) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "data_format: " << data_format << std::endl;
+    std::cout << "filter_format: " << filter_format << std::endl;
+    std::cout << "groups: " << groups << std::endl;
+
     /// add the ops to the graph
     g.add_op(conv);
-  }
-
-  void BiasAdd(const size_t& nid, std::vector<logical_tensor>& inputs, logical_tensor& output,
-               graph& g) {
-    /// create op conv
-    std::cout << "bias_add" + std::to_string(graph_op_idx_) << std::endl;
-    op bias_add{graph_op_idx_,
-                op::kind::BiasAdd,
-                inputs,
-                {output},
-                "bias_add" + std::to_string(graph_op_idx_)};
-    /// add the ops to the graph
-    g.add_op(bias_add);
   }
 
   void Compile(graph& g) {
@@ -285,11 +315,11 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         // update input logical tensors with concrete shape and plain layout
         for (size_t idx = 0; idx < inputs.size(); ++idx) {
           auto ori_lt = inputs[idx];
-          // std::cout << "input " << ori_lt.get_id() << ": ";
-          // for (auto s : eid2shape_[ori_lt.get_id()]) {
-          //   std::cout << s << ", ";
-          // }
-          // std::cout << std::endl;
+          std::cout << "input " << ori_lt.get_id() << ": ";
+          for (auto s : eid2shape_[ori_lt.get_id()]) {
+            std::cout << s << ", ";
+          }
+          std::cout << std::endl;
           inputs[idx] = logical_tensor{ori_lt.get_id(), ori_lt.get_data_type(),
                                        eid2shape_[ori_lt.get_id()], layout_type::strided};
           eid2desc_[ori_lt.get_id()] = inputs[idx];
@@ -298,11 +328,11 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         // update output logical tensors with unknown shape and plain layout
         for (size_t idx = 0; idx < outputs.size(); ++idx) {
           auto ori_lt = outputs[idx];
-          // std::cout << "output " << ori_lt.get_id() << ": ";
-          // for (auto s : eid2shape_[ori_lt.get_id()]) {
-          //   std::cout << s << ", ";
-          // }
-          // std::cout << std::endl;
+          std::cout << "output " << ori_lt.get_id() << ": ";
+          for (auto s : eid2shape_[ori_lt.get_id()]) {
+            std::cout << s << ", ";
+          }
+          std::cout << std::endl;
           outputs[idx] = logical_tensor{ori_lt.get_id(), ori_lt.get_data_type(),
                                         eid2shape_[ori_lt.get_id()], layout_type::strided};
           eid2desc_[ori_lt.get_id()] = outputs[idx];
@@ -323,6 +353,8 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         // }
 
         std::vector<tensor> in_trs, out_trs;
+        in_trs.reserve(inputs.size());
+        out_trs.reserve(outputs.size());
         for (int i = 0; i < inputs.size(); ++i) {
           size_t eid = inputs[i].get_id();
           tensor tr{inputs[i], eng_, {}};
@@ -402,8 +434,8 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         if (!is_last) {
           desc = logical_tensor{max_eid_ + tmp_idx_, data_type::f32, layout_type::undef};
           eid2desc_.insert(std::make_pair(max_eid_ + tmp_idx_, desc));
-          ++tmp_idx_;
           std::cout << "tmp_idx: " << max_eid_ + tmp_idx_ << std::endl;
+          ++tmp_idx_;
           return;
         };  // -1 reserved value for empty input.
 
@@ -426,6 +458,11 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         int add_num = in_num - inputs.size();
         inputs.insert(inputs.end(), pat_inputs.begin(), pat_inputs.begin() + add_num);
         pat_inputs.erase(pat_inputs.begin(), pat_inputs.begin() + add_num);
+        std::cout << "op input: "<< ": ";
+        for (auto s : inputs) {
+          std::cout << s.get_id() << ", ";
+        }
+        std::cout << std::endl;
       }
 
       /* The dnnl engine. */
