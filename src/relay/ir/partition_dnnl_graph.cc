@@ -54,10 +54,6 @@ class DNNLPatternPartitioner : protected MixedModeMutator {
  std::map<std::string, std::string> op_map{
      {"nn.bias_add", "bias"},
      {"nn.conv2d", "conv2d"},
-     {"tanh", "tanh"},
-     {"sigmoid", "sigmoid"},
-     {"nn.deconv2d", "nn.conv2d_transpose"},
-     {"nn.deconv3d", "nn.conv3d_transpose"},
  };
 
 public:
@@ -106,7 +102,8 @@ public:
      } else if (IsOp(call, "nn.bias_add")) {
        BiasAdd(call, op_idx, dnnl_graph, inputs, output);
      } else {
-       LOG_FATAL << "Unsupported DNNL Graph Op";
+       Wildcard(call, op_idx, dnnl_graph, inputs, output);
+       LOG_WARNING << "Unsupported DNNL Graph Op";
      }
    }
 
@@ -123,14 +120,21 @@ public:
                << "]'s supporting status: " << (partitions[i].is_supported() ? "true" : "false")
                << "\n";
      auto p = partitions[i];
+     if (p.get_ops_num() == 1) {
+       size_t op_idx = p.get_ops()[0];
+       auto op_node = expr_graph->index_to_node(op_idx);
+       auto op = op_node->ref().as<CallNode>()->op;
+       auto op_name = op.as<OpNode>()->name;
+       if (!op_map.count(op_name)) {
+         std::cout << op_name << "will run on native codegen" <<std::endl;
+         continue;
+       }
+     }
      std::unordered_map<int, DFPattern> pat_map;
      for (auto i_desc : p.get_in_ports()) {
        auto pi_idx = i_desc.get_id();
        auto pi_node = expr_graph->index_to_node(pi_idx);
        auto pi_pat = IsWildcard();
-      //  if (auto call = pi_node->ref().as<ConstantNode>()) {
-      //    pi_pat = IsConstant();
-      //  }
        pat_map.insert(std::make_pair(pi_idx, pi_pat));
      }
 
@@ -195,6 +199,13 @@ public:
     op bias_add {idx, op::kind::BiasAdd, inputs, {output}, "bias_add" + std::to_string(idx)};
     /// add the ops to the graph
     g.add_op(bias_add);
+  }
+
+  void Wildcard(const CallNode* call, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs,
+               logical_tensor output) {
+    op wildcard {idx, op::kind::Wildcard, inputs, {output}, "wildcard" + std::to_string(idx)};
+    /// add the ops to the graph
+    g.add_op(wildcard);
   }
 
   /*!
