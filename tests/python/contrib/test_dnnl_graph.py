@@ -108,17 +108,18 @@ def partition_for_dnnl(mod, params=None, alter_layout=True, prune_subgraphs=True
         [
             transform.MergeDNNLGraph(),
             # transform.MergeComposite(dnnl.pattern_table()),
-            tvm.transform.PrintIR(),
+            # tvm.transform.PrintIR(),
             transform.AnnotateTarget("dnnl"),
+            # tvm.transform.PrintIR(),
             transform.MergeCompilerRegions(),
+            # tvm.transform.PrintIR(),
             transform.PartitionGraph(),
+            # tvm.transform.PrintIR(),
         ]
     )
 
     with tvm.transform.PassContext(opt_level=3):
         mod = byoc_seq(mod)
-        if prune_subgraphs:
-            mod = dnnl.prune_dnnl_subgraphs(mod)
     return mod
 
 

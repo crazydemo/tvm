@@ -186,7 +186,7 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         GetOpInputs(op_inputs, pat_inputs, 2, is_first);
         GetOutput(nid, op_output, is_last);
         Convolution(nid, op_inputs, op_output, g);
-      } else if (op_name == "nn.bias_add") {
+      } else if (op_name.find("nn.bias") != std::string::npos) {
         GetOpInputs(op_inputs, pat_inputs, 2, is_first);
         GetOutput(nid, op_output, is_last);
         op bias_add{graph_op_idx_,
@@ -194,9 +194,11 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
                     op_inputs,
                     {op_output},
                     "bias_add" + std::to_string(graph_op_idx_)};
-        std::string data_layout = node.GetAttr<std::vector<std::string>>("data_layout")[0];
-        std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
-        bias_add.set_attr<std::string>("data_format", data_format);
+        if (node.HasAttr("data_layout")) {
+          std::string data_layout = node.GetAttr<std::vector<std::string>>("data_layout")[0];
+          std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+          bias_add.set_attr<std::string>("data_format", data_format);
+        }
         g.add_op(bias_add);
       } else if (op_name == "nn.relu") {
         GetOpInputs(op_inputs, pat_inputs, 1, is_first);

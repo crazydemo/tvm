@@ -133,10 +133,10 @@ public:
        auto op_node = expr_graph->index_to_node(op_idx);
        auto op = op_node->ref().as<CallNode>()->op;
        auto op_name = op.as<OpNode>()->name;
-      //  if (!op_map.count(op_name)) {
-      std::cout << op_name << "will run on native codegen" <<std::endl;
-      continue;
-      //  }
+       if (!op_map.count(op_name)) {
+         std::cout << op_name << "will run on native codegen" <<std::endl;
+         continue;
+       }
      }
      std::unordered_map<int, DFPattern> pat_map;
      for (auto i_desc : p.get_in_ports()) {
