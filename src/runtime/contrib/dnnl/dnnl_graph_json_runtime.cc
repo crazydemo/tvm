@@ -79,18 +79,22 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     //   entry_out_mem_[eid].set_data_handle(data_entry_[eid]->data);
     // }
     // Fill in the input buffers.
+    std::cout << "=====================Run=========================" << std::endl;
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);
+      std::cout << "inputs: " << eid << std::endl;
       SetBuffer(eid, eid2desc_[eid].get_mem_size());
     }
     for (size_t i = 0; i < outputs_.size(); ++i) {
       auto eid = EntryID(outputs_[i]);
+      std::cout << "outputs: " << eid << std::endl;
       SetBuffer(eid, eid2desc_[eid].get_mem_size());
     }
 
     std::cout << "dnnl graph executing ..." << std::endl;
     /// execute the compile partition
     for (size_t i = 0; i < cps_.size(); ++i) {
+      std::cout << "executing " << i << std::endl;
       cps_.at(i).execute(strm_, input_args_[i], output_args_[i]);
     }
   }
@@ -168,7 +172,7 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
     const auto& node = nodes_[nid];
     auto pat_name = node.GetOpName();
     std::vector<std::string> op_names = ParsingOpList(pat_name);
-    std::vector<logical_tensor> pat_inputs;
+    std::vector<logical_tensor> pat_inputs = {};
     GetPatInputs(nid, pat_inputs);
 
     for (size_t i = 0; i < op_names.size(); ++i) {
@@ -360,13 +364,27 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         out_trs.reserve(outputs.size());
         for (int i = 0; i < inputs.size(); ++i) {
           size_t eid = inputs[i].get_id();
-          tensor tr{inputs[i], eng_, {}};
+          if (eid2tr_.count(eid)) {
+            in_trs.push_back(eid2tr_[eid]);
+            continue;
+          }
+          auto mem_size = eid2desc_[eid].get_mem_size();
+          data_buffers_.push_back({});
+          data_buffers_.back().reset(malloc(mem_size), cpu_deletor{});
+          tensor tr{inputs[i], eng_, data_buffers_.back().get()};
           in_trs.push_back(tr);
           eid2tr_[eid] = tr;
         }
         for (int i = 0; i < outputs.size(); ++i) {
           size_t eid = outputs[i].get_id();
-          tensor tr{outputs[i], eng_, {}};
+          if (eid2tr_.count(eid)) {
+            out_trs.push_back(eid2tr_[eid]);
+            continue;
+          }
+          auto mem_size = eid2desc_[eid].get_mem_size();
+          data_buffers_.push_back({});
+          data_buffers_.back().reset(malloc(mem_size), cpu_deletor{});
+          tensor tr{outputs[i], eng_, data_buffers_.back().get()};
           out_trs.push_back(tr);
           eid2tr_[eid] = tr;
         }
@@ -415,6 +433,13 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         return AttrConvert<T>(attr);
       }
 
+      struct cpu_deletor {
+        cpu_deletor() = default;
+        void operator()(void* ptr) {
+          if (ptr) free(ptr);
+        }
+      };
+
       void GetPatInputs(const size_t& nid, std::vector<logical_tensor>& pat_inputs) {
         const JSONGraphNode& node = nodes_[nid];
 
@@ -425,10 +450,11 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
           std::cout << "input: " << eid << std::endl;
           eid2shape_.insert(std::make_pair(eid, shape));
           if (eid2desc_.count(eid)) pat_inputs.push_back(eid2desc_[eid]);
-
-          logical_tensor desc{eid, data_type::f32, layout_type::undef};
-          eid2desc_[eid] = desc;
-          pat_inputs.push_back(desc);
+          else {
+            logical_tensor desc{eid, data_type::f32, layout_type::undef};
+            eid2desc_[eid] = desc;
+            pat_inputs.push_back(desc);
+          }
         }
       }
 
@@ -457,12 +483,29 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       void GetOpInputs(std::vector<logical_tensor> & inputs,
                        std::vector<logical_tensor> & pat_inputs, const size_t& in_num,
                        bool is_first) {
+        std::cout << "is_first:" << is_first << std::endl;
+        std::cout << "op input: "
+                  << ": ";
+        std::cout << inputs.size() << ", ";
+        std::cout << std::endl;
+        std::cout << "pat_inputs: "
+                  << ": ";
+        for (auto s : pat_inputs) {
+          std::cout << s.get_id() << ", ";
+        }
+        std::cout << std::endl;
         if (!is_first) inputs.push_back(tmp_end_);
         int add_num = in_num - inputs.size();
         inputs.insert(inputs.end(), pat_inputs.begin(), pat_inputs.begin() + add_num);
         pat_inputs.erase(pat_inputs.begin(), pat_inputs.begin() + add_num);
         std::cout << "op input: "<< ": ";
         for (auto s : inputs) {
+          std::cout << s.get_id() << ", ";
+        }
+        std::cout << std::endl;
+        std::cout << "pat_inputs: "
+                  << ": ";
+        for (auto s : pat_inputs) {
           std::cout << s.get_id() << ", ";
         }
         std::cout << std::endl;
@@ -477,6 +520,9 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       int max_eid_;
       int tmp_idx_;
       logical_tensor tmp_end_;
+
+      std::vector<std::shared_ptr<void>> data_buffers_;
+
       std::unordered_map<uint32_t, std::vector<int64_t>> eid2shape_;
       std::unordered_map<uint32_t, logical_tensor> eid2desc_;
       std::unordered_map<uint32_t, tensor> eid2tr_;

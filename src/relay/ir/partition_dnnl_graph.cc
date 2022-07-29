@@ -133,15 +133,14 @@ public:
        auto op_node = expr_graph->index_to_node(op_idx);
        auto op = op_node->ref().as<CallNode>()->op;
        auto op_name = op.as<OpNode>()->name;
-       if (!op_map.count(op_name)) {
-         std::cout << op_name << "will run on native codegen" <<std::endl;
-         continue;
-       }
+      //  if (!op_map.count(op_name)) {
+      std::cout << op_name << "will run on native codegen" <<std::endl;
+      continue;
+      //  }
      }
      std::unordered_map<int, DFPattern> pat_map;
      for (auto i_desc : p.get_in_ports()) {
        auto pi_idx = i_desc.get_id();
-       auto pi_node = expr_graph->index_to_node(pi_idx);
        auto pi_pat = IsWildcard();
        pat_map.insert(std::make_pair(pi_idx, pi_pat));
      }
@@ -178,7 +177,6 @@ public:
     const auto* conv2d_attr = call->attrs.as<Conv2DAttrs>();
     ICHECK(conv2d_attr);
 
-    int groups = conv2d_attr->groups;
     std::vector<int64_t> strides = ShapeToInt(conv2d_attr->strides);
     std::vector<int64_t> padding = ShapeToInt(conv2d_attr->padding);
     std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
