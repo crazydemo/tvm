@@ -190,6 +190,9 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
                     op_inputs,
                     {op_output},
                     "bias_add" + std::to_string(graph_op_idx_)};
+        std::string data_layout = node.GetAttr<std::vector<std::string>>("data_layout")[0];
+        std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+        bias_add.set_attr<std::string>("data_format", data_format);
         g.add_op(bias_add);
       } else if (op_name == "nn.relu") {
         GetOpInputs(op_inputs, pat_inputs, 1, is_first);

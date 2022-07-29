@@ -54,7 +54,7 @@ class DNNLPatternPartitioner : protected MixedModeMutator {
  std::map<std::string, std::string> op_map{
      {"nn.bias_add", "bias"},
      {"nn.conv2d", "conv2d"},
-    //  {"nn.relu", "relu"},
+     {"nn.relu", "relu"},
  };
 
 public:
@@ -104,10 +104,10 @@ public:
        op bias_add{
            op_idx, op::kind::BiasAdd, inputs, {output}, "bias_add" + std::to_string(op_idx)};
        dnnl_graph.add_op(bias_add);
-    //  } else if (IsOp(call, "nn.relu")) {
-    //    op relu{
-    //        op_idx, op::kind::ReLU, inputs, {output}, "relu" + std::to_string(op_idx)};
-    //    dnnl_graph.add_op(relu);
+     } else if (IsOp(call, "nn.relu")) {
+       op relu{
+           op_idx, op::kind::ReLU, inputs, {output}, "relu" + std::to_string(op_idx)};
+       dnnl_graph.add_op(relu);
      } else {
        op wildcard{
            op_idx, op::kind::Wildcard, inputs, {output}, "wildcard" + std::to_string(op_idx)};

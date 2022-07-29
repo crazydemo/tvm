@@ -374,10 +374,10 @@ def test_conv2d_pattern(run_module, dtype="float32"):
     k_shape = (16, 32, 3, 3)
     activation_lst = ["relu",]#None, "relu"
     for a in activation_lst:
-        conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
-        conv2d = tvm.IRModule.from_expr(conv2d)
-        config = conv2d, dic, param_lst
-        run_and_verify_func(config, run_module=run_module, dtype=dtype)
+        # conv2d, dic, param_lst = get_conv2d(x_shape, k_shape, activation=a, dtype=dtype)
+        # conv2d = tvm.IRModule.from_expr(conv2d)
+        # config = conv2d, dic, param_lst
+        # run_and_verify_func(config, run_module=run_module, dtype=dtype)
 
         conv2d_bias, dic, param_lst = get_conv2d_bias(x_shape, k_shape, activation=a, dtype=dtype)
         conv2d_bias = tvm.IRModule.from_expr(conv2d_bias)
@@ -551,8 +551,8 @@ def test_resnetv1_rewrite(run_module, dtype="float32"):
 if __name__ == "__main__":
     # # tvm.testing.main()
     # test_conv2d_weights_const(True)
-    # test_conv2d_pattern(True)
+    test_conv2d_pattern(True)
     # test_conv2d_bias_sum_relu(True)
     # test_invalid_graph_pattern(True)
     # test_pool2d(True)
-    test_resnetv1_rewrite(True)
+    # test_resnetv1_rewrite(True)
