@@ -221,6 +221,17 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
                 {op_output},
                 "add" + std::to_string(graph_op_idx_)};
         g.add_op(add);
+      } else if (op_name == "nn.dense") {
+        GetOpInputs(op_inputs, pat_inputs, 2, is_first);
+        GetOutput(nid, op_output, is_last);
+        std::cout << "dense input: " << op_inputs.size() << std::endl;
+        op matmul{graph_op_idx_,
+                  op::kind::MatMul,
+                  op_inputs,
+                  {op_output},
+                  "matmul" + std::to_string(graph_op_idx_)};
+        matmul.set_attr<bool>("transpose_b", true);
+        g.add_op(matmul);
       } else {
         LOG(FATAL) << "Unsupported op: " << op_name;
       }

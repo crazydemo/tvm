@@ -484,6 +484,70 @@ def test_pool2d(run_module, dtype="float32"):
                         run_module=run_module,
                     )
 
+def get_dense(
+    x_shape=(1, 16), k_shape=(32, 16), activation=None, has_reshape=False, dtype="float32"
+):
+    x = relay.var("x", shape=(x_shape), dtype=dtype)
+    kernel = relay.var("kernel", shape=(k_shape), dtype=dtype)
+    out = relay.nn.dense(x, kernel, units=k_shape[0])
+
+    if has_reshape:
+        out = relay.reshape(out, newshape=(1, x_shape[0], k_shape[0]))
+    dic = {"x": x_shape, "kernel": k_shape}
+    param_lst = ["kernel"]
+    return out, dic, param_lst
+
+
+def get_dense_bias(
+    x_shape=(1, 16),
+    k_shape=(32, 16),
+    activation=None,
+    has_reshape=False,
+    use_add=False,
+    dtype="float32",
+):
+    dense, dic, param_lst = get_dense(
+        x_shape=x_shape, k_shape=k_shape, has_reshape=has_reshape, dtype=dtype
+    )
+    bias = relay.var("bias", shape=(k_shape[0],), dtype=dtype)
+    if use_add:
+        out = relay.add(dense, bias)
+    else:
+        out = relay.nn.bias_add(dense, bias)
+    dic["bias"] = (k_shape[0],)
+    param_lst += ["bias"]
+    return out, dic, param_lst
+
+
+def test_dense(run_module, dtype="float32"):
+    x_shape = (1, 16)
+    k_shape = (32, 16)
+
+    dense, dic, param_lst = get_dense(x_shape, k_shape, dtype=dtype)
+    dense = tvm.IRModule.from_expr(dense)
+    config = dense, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+    dense, dic, param_lst = get_dense(x_shape, k_shape=(1, 16), dtype=dtype)
+    dense = tvm.IRModule.from_expr(dense)
+    config = dense, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+
+def test_dense_pattern(run_module, dtype="float32"):
+    x_shape = (1, 16)
+    k_shape = (32, 16)
+
+    dense, dic, param_lst = get_dense(x_shape, k_shape, dtype=dtype)
+    dense = tvm.IRModule.from_expr(dense)
+    config = dense, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
+    dense_bias, dic, param_lst = get_dense_bias(x_shape, k_shape, dtype=dtype)
+    dense_bias = tvm.IRModule.from_expr(dense_bias)
+    config = dense_bias, dic, param_lst
+    run_and_verify_func(config, run_module=run_module, dtype=dtype)
+
     
 def test_resnetv1_rewrite(run_module, dtype="float32"):
     def get_graph():
@@ -556,4 +620,6 @@ if __name__ == "__main__":
     # test_conv2d_bias_sum_relu(True)
     # test_invalid_graph_pattern(True)
     # test_pool2d(True)
-    test_resnetv1_rewrite(True)
+    # test_resnetv1_rewrite(True)
+    test_dense(True)
+    test_dense_pattern(True)

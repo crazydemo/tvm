@@ -52,10 +52,8 @@ class DNNLPatternPartitioner : protected MixedModeMutator {
  using layout_type = logical_tensor::layout_type;
 
  std::map<std::string, std::string> op_map{
-     {"nn.bias_add", "bias"},
-     {"nn.conv2d", "conv2d"},
-     {"add", "add"},
-     {"nn.relu", "relu"},
+     {"nn.bias_add", "bias"}, {"nn.conv2d", "conv2d"}, {"add", "add"},
+     {"nn.relu", "relu"},     {"nn.dense", "dense"},
  };
 
 public:
@@ -101,10 +99,10 @@ public:
      PostDfsIndex op_idx = index;
      if (IsOp(call, "nn.conv2d")) {
        Conv2d(call, op_idx, dnnl_graph, inputs, output);
-    //  } else if (IsOp(call, "nn.dense")) {
-    //    op dense{
-    //        op_idx, op::kind::MatMul, inputs, {output}, "dense" + std::to_string(op_idx)};
-    //    dnnl_graph.add_op(dense);
+     } else if (IsOp(call, "nn.dense")) {
+       op dense{
+           op_idx, op::kind::MatMul, inputs, {output}, "dense" + std::to_string(op_idx)};
+       dnnl_graph.add_op(dense);
     //  } else if (IsOp(call, "nn.max_pool2d")) {
     //    Maxpool2d(call, op_idx, dnnl_graph, inputs, output);
     //  } else if (IsOp(call, "nn.global_avg_pool2d")) {
