@@ -244,11 +244,19 @@ def make_predicate(checker):
 
 
 def add_checker(attrs, args, op_name):
-    """Check if add is supported by DNNL."""
+    """Check if add is aligned with elementwise_add and bias_add."""
     if op_name == "sum":
+        if not isinstance(args[0].op, tvm.ir.op.Op):
+            return False
+        if args[0].op.name != "add":
+            return False
         if tuple(get_shape(args[0])) != tuple(get_shape(args[1])):
             return False
     if op_name == "bias_add":
+        if not isinstance(args[0].op, tvm.ir.op.Op):
+            return False
+        if args[0].op.name != "nn.conv2d":
+            return False
         channel = dict(attrs)["channels"]
         const_shape = get_shape(args[1])
         if channel != reduce(lambda x, y: x * y, const_shape):
