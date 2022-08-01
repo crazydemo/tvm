@@ -52,16 +52,13 @@ Expr MergeDNNLGraph(const Function& func, const IRModule& m) {
       PartitionDNNLPattern(merged_func);
   ICHECK_GT(dnnl_partitions.size(), 0);
   for (int i = dnnl_partitions.size() - 1; i >= 0; --i) {
-    std::cout << "======================================="<<std::endl;
     std::cout<<i<<std::endl;
     std::cout << dnnl_partitions[i].first << std::endl;
     std::cout << dnnl_partitions[i].second << std::endl;
     Map<String, ObjectRef> attrs;
     attrs.Set("Composite", dnnl_partitions[i].first);
-    std::cout<<"setted attrs"<<std::endl;
     merged_func = Downcast<Function>(PartitionPattern(dnnl_partitions[i].second, merged_func,
     attrs, {}, true));
-    std::cout << merged_func << std::endl;
     merged_func = InferType(merged_func, m);
   }
   // attrs.Set("Composite", dnnl_partition[0].first);

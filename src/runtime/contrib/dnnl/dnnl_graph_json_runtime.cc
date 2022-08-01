@@ -112,6 +112,7 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
 
   std::map<std::string, std::string> op_map{
       {"bias", "nn.bias_add"},
+      {"add", "add"},
       {"relu", "nn.relu"},
       {"tanh", "tanh"},
       {"sigmoid", "sigmoid"},
@@ -131,10 +132,10 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       if (op_name.find("dnnl") != std::string::npos) {
         op_name.replace(op_name.find("dnnl"), 4, "nn");
         if (op_name.find("deconv") != std::string::npos) {
-          op_name = op_map[op_name];
+          op_name = op_map.count(op_name) ? op_map[op_name] : "_";
         }
       } else {
-        op_name = op_map[op_name];
+        op_name = op_map.count(op_name) ? op_map[op_name] : "_";
       }
       if (pos > start) op_list.push_back(op_name);
       start = pos + interval.size();
@@ -210,6 +211,16 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
                     {op_output},
                     "relu" + std::to_string(graph_op_idx_)};
         g.add_op(relu);
+      } else if (op_name == "add") {
+        GetOpInputs(op_inputs, pat_inputs, 2, is_first);
+        GetOutput(nid, op_output, is_last);
+        std::cout << "add input: " << op_inputs.size() << std::endl;
+        op add{graph_op_idx_,
+                op::kind::Add,
+                op_inputs,
+                {op_output},
+                "add" + std::to_string(graph_op_idx_)};
+        g.add_op(add);
       } else {
         LOG(FATAL) << "Unsupported op: " << op_name;
       }

@@ -54,6 +54,7 @@ class DNNLPatternPartitioner : protected MixedModeMutator {
  std::map<std::string, std::string> op_map{
      {"nn.bias_add", "bias"},
      {"nn.conv2d", "conv2d"},
+     {"add", "add"},
      {"nn.relu", "relu"},
  };
 
@@ -100,6 +101,14 @@ public:
      PostDfsIndex op_idx = index;
      if (IsOp(call, "nn.conv2d")) {
        Conv2d(call, op_idx, dnnl_graph, inputs, output);
+    //  } else if (IsOp(call, "nn.dense")) {
+    //    op dense{
+    //        op_idx, op::kind::MatMul, inputs, {output}, "dense" + std::to_string(op_idx)};
+    //    dnnl_graph.add_op(dense);
+    //  } else if (IsOp(call, "nn.max_pool2d")) {
+    //    Maxpool2d(call, op_idx, dnnl_graph, inputs, output);
+    //  } else if (IsOp(call, "nn.global_avg_pool2d")) {
+    //    GlobalAvgPool2d(call, op_idx, dnnl_graph, inputs, output);
      } else if (IsOp(call, "nn.bias_add")) {
        op bias_add{
            op_idx, op::kind::BiasAdd, inputs, {output}, "bias_add" + std::to_string(op_idx)};
@@ -108,6 +117,9 @@ public:
        op relu{
            op_idx, op::kind::ReLU, inputs, {output}, "relu" + std::to_string(op_idx)};
        dnnl_graph.add_op(relu);
+     } else if (IsOp(call, "add")) {
+       op add{op_idx, op::kind::Add, inputs, {output}, "add" + std::to_string(op_idx)};
+       dnnl_graph.add_op(add);
      } else {
        op wildcard{
            op_idx, op::kind::Wildcard, inputs, {output}, "wildcard" + std::to_string(op_idx)};
@@ -201,17 +213,61 @@ public:
     g.add_op(conv);
   }
 
-  void BiasAdd(const CallNode* call, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs, logical_tensor output) {
-    op bias_add {idx, op::kind::BiasAdd, inputs, {output}, "bias_add" + std::to_string(idx)};
+  void Maxpool2d(const CallNode* call, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs,
+              logical_tensor output) {
+    const auto* attr = call->attrs.as<MaxPool2DAttrs>();
+    ICHECK(attr);
+    std::vector<int64_t> pool_size = ShapeToInt(attr->pool_size);
+    std::vector<int64_t> strides = ShapeToInt(attr->strides);
+    std::vector<int64_t> padding = ShapeToInt(attr->padding);
+    std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
+    std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
+    std::vector<int64_t> dilation = ShapeToInt(attr->dilation);
+    std::string data_layout = attr->layout;
+    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+    std::string rounding_type = attr->ceil_mode ? "ceil" : "floor";
+
+    op maxpool{idx, op::kind::MaxPool, inputs, {output}, "maxpool" + std::to_string(idx)};
+    maxpool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    maxpool.set_attr<std::vector<int64_t>>("strides", strides);
+    maxpool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    maxpool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    maxpool.set_attr<std::vector<int64_t>>("dilations", dilation);
+    maxpool.set_attr<std::string>("data_format", data_format);
+    maxpool.set_attr<std::string>("rounding_type", rounding_type);
+
     /// add the ops to the graph
-    g.add_op(bias_add);
+    g.add_op(maxpool);
   }
 
-  void Wildcard(const CallNode* call, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs,
-               logical_tensor output) {
-    op wildcard {idx, op::kind::Wildcard, inputs, {output}, "wildcard" + std::to_string(idx)};
+  void GlobalAvgPool2d(const CallNode* call, PostDfsIndex idx, graph& g,
+                 std::vector<logical_tensor> inputs, logical_tensor output) {
+    const auto* attr = call->attrs.as<GlobalPool2DAttrs>();
+    ICHECK(attr);
+
+    std::vector<int64_t> pool_size;
+    for (size_t i = 2; i <inputs[0].get_dims().size(); ++i) {
+      pool_size.push_back(inputs[0].get_dims()[i]);
+      std::cout << "dim: " << inputs[0].get_dims()[i] << std::endl;
+    }
+    std::string data_layout = attr->layout;
+    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+    std::vector<int64_t> strides = std::vector<int64_t>(inputs[0].get_dims().size() - 2, 1);
+    std::vector<int64_t> padding = std::vector<int64_t>((inputs[0].get_dims().size() - 2) * 2, 0);
+    std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
+    std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
+    std::vector<int64_t> dilation = std::vector<int64_t>(inputs[0].get_dims().size() - 2, 1);
+
+    op pool{idx, op::kind::AvgPool, inputs, {output}, "global_avgpool" + std::to_string(idx)};
+    pool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    pool.set_attr<std::vector<int64_t>>("strides", strides);
+    pool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    pool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    pool.set_attr<std::vector<int64_t>>("dilations", dilation);
+    pool.set_attr<std::string>("data_format", data_format);
+
     /// add the ops to the graph
-    g.add_op(wildcard);
+    g.add_op(pool);
   }
 
   /*!
