@@ -181,7 +181,7 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       bool is_first = i == 0;
       bool is_last = i == op_names.size() - 1;
       std::cout << "op_name: " << op_name << std::endl;
-      if (op_name == "nn.conv2d") {
+      if (op_name.find("conv2d") != std::string::npos) {
         GetOpInputs(op_inputs, pat_inputs, 2, is_first);
         GetOutput(nid, op_output, is_last);
         Convolution(nid, op_inputs, op_output, g);
