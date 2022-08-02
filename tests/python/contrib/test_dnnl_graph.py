@@ -474,12 +474,32 @@ def test_pool2d(run_module, dtype="float32"):
     for pool_size in [(2, 2), (3, 3)]:
         for strides in [(1, 1), (2, 2)]:
             for padding in [(0, 0), (1, 1), (0, 0, 1, 1)]:
+                for ceil_mode in [False]:
+                    # Skip "the padding size is larger than or equal to the filter size for exclusive-counting pooling"
+                    if pool_size == (2, 2) and padding == (0, 0, 1, 1):
+                        continue
+                    for count_include_pad in [False, True]:
+                        # Skip "inclusive-counted blended or average pooling is not supported in combination with asymmetric padding"
+                        if count_include_pad and (padding == (0, 0, 1, 1) or strides == (2, 2)):
+                            continue
+                        run_and_verify_func(
+                            get_graph(
+                                relay.nn.avg_pool2d,
+                                pool_size=pool_size,
+                                strides=strides,
+                                padding=padding,
+                                ceil_mode=ceil_mode,
+                                count_include_pad=count_include_pad,
+                            ),
+                            run_module=run_module,
+                        )
                     run_and_verify_func(
                         get_graph(
                             relay.nn.max_pool2d,
                             pool_size=pool_size,
                             strides=strides,
                             padding=padding,
+                            ceil_mode=ceil_mode,
                         ),
                         run_module=run_module,
                     )
@@ -619,7 +639,7 @@ if __name__ == "__main__":
     # test_conv2d_pattern(True)
     # test_conv2d_bias_sum_relu(True)
     # test_invalid_graph_pattern(True)
-    # test_pool2d(True)
+    test_pool2d(True)
     # test_resnetv1_rewrite(True)
-    test_dense(True)
-    test_dense_pattern(True)
+    # test_dense(True)
+    # test_dense_pattern(True)

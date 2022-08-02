@@ -52,8 +52,8 @@ class DNNLPatternPartitioner : protected MixedModeMutator {
  using layout_type = logical_tensor::layout_type;
 
  std::map<std::string, std::string> op_map{
-     {"nn.bias_add", "bias"}, {"nn.conv2d", "conv2d"}, {"add", "add"},
-     {"nn.relu", "relu"},     {"nn.dense", "dense"},
+   {"nn.bias_add", "bias"}, {"nn.conv2d", "conv2d"}, {"add", "add"},
+    {"nn.relu", "relu"},     {"nn.dense", "dense"}, {"nn.max_pool2d", "maxpool2d"}, {"nn.avg_pool2d", "avgpool2d"},
  };
 
 public:
@@ -98,13 +98,18 @@ public:
      // Get OP.
      PostDfsIndex op_idx = index;
      if (IsOp(call, "nn.conv2d")) {
-       Conv2d(call, op_idx, dnnl_graph, inputs, output);
+       const auto* attrs = call->attrs.as<Conv2DAttrs>();
+       Conv(attrs, op_idx, dnnl_graph, inputs, output);
      } else if (IsOp(call, "nn.dense")) {
        op dense{
            op_idx, op::kind::MatMul, inputs, {output}, "dense" + std::to_string(op_idx)};
        dnnl_graph.add_op(dense);
-    //  } else if (IsOp(call, "nn.max_pool2d")) {
-    //    Maxpool2d(call, op_idx, dnnl_graph, inputs, output);
+     } else if (IsOp(call, "nn.max_pool2d")) {
+       const auto* attr = call->attrs.as<MaxPool2DAttrs>();
+       MaxPool(attr, op_idx, dnnl_graph, inputs, output);
+     } else if (IsOp(call, "nn.avg_pool2d")) {
+       const auto* attr = call->attrs.as<AvgPool2DAttrs>();
+       AvgPool(attr, op_idx, dnnl_graph, inputs, output);
     //  } else if (IsOp(call, "nn.global_avg_pool2d")) {
     //    GlobalAvgPool2d(call, op_idx, dnnl_graph, inputs, output);
      } else if (IsOp(call, "nn.bias_add")) {
@@ -182,18 +187,19 @@ public:
   }
 
  protected:
-  
-  void Conv2d(const CallNode* call, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs, logical_tensor output) {
-    const auto* conv2d_attr = call->attrs.as<Conv2DAttrs>();
-    ICHECK(conv2d_attr);
 
-    std::vector<int64_t> strides = ShapeToInt(conv2d_attr->strides);
-    std::vector<int64_t> padding = ShapeToInt(conv2d_attr->padding);
+  template <typename ATTRS>
+  void Conv(const ATTRS* attrs, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs, logical_tensor output) {
+
+    ICHECK(attrs);
+
+    std::vector<int64_t> strides = ShapeToInt(attrs->strides);
+    std::vector<int64_t> padding = ShapeToInt(attrs->padding);
     std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
     std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
-    std::vector<int64_t> dilation = ShapeToInt(conv2d_attr->dilation);
-    std::string data_layout = conv2d_attr->data_layout;
-    std::string kernel_layout = conv2d_attr->kernel_layout;
+    std::vector<int64_t> dilation = ShapeToInt(attrs->dilation);
+    std::string data_layout = attrs->data_layout;
+    std::string kernel_layout = attrs->kernel_layout;
     std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
     std::string filter_format = regex_replace(kernel_layout, regex("(D?)(H?)W"), "X");
 
@@ -205,25 +211,25 @@ public:
     conv.set_attr<std::vector<int64_t>>("dilations", dilation);
     conv.set_attr<std::string>("data_format", data_format);  
     conv.set_attr<std::string>("filter_format", filter_format);
-    conv.set_attr<int64_t>("groups", conv2d_attr->groups);
+    conv.set_attr<int64_t>("groups", attrs->groups);
 
     /// add the ops to the graph
     g.add_op(conv);
   }
 
-  void Maxpool2d(const CallNode* call, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs,
+  template <typename ATTRS>
+  void MaxPool(const ATTRS* attrs, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs,
               logical_tensor output) {
-    const auto* attr = call->attrs.as<MaxPool2DAttrs>();
-    ICHECK(attr);
-    std::vector<int64_t> pool_size = ShapeToInt(attr->pool_size);
-    std::vector<int64_t> strides = ShapeToInt(attr->strides);
-    std::vector<int64_t> padding = ShapeToInt(attr->padding);
+    ICHECK(attrs);
+    std::vector<int64_t> pool_size = ShapeToInt(attrs->pool_size);
+    std::vector<int64_t> strides = ShapeToInt(attrs->strides);
+    std::vector<int64_t> padding = ShapeToInt(attrs->padding);
     std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
     std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
-    std::vector<int64_t> dilation = ShapeToInt(attr->dilation);
-    std::string data_layout = attr->layout;
+    std::vector<int64_t> dilation = ShapeToInt(attrs->dilation);
+    std::string data_layout = attrs->layout;
     std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
-    std::string rounding_type = attr->ceil_mode ? "ceil" : "floor";
+    std::string rounding_type = attrs->ceil_mode ? "ceil" : "floor";
 
     op maxpool{idx, op::kind::MaxPool, inputs, {output}, "maxpool" + std::to_string(idx)};
     maxpool.set_attr<std::vector<int64_t>>("kernel", pool_size);
@@ -237,6 +243,34 @@ public:
     /// add the ops to the graph
     g.add_op(maxpool);
   }
+
+  template <typename ATTRS>
+  void AvgPool(const ATTRS* attrs, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs,
+              logical_tensor output) {
+    ICHECK(attrs);
+    std::vector<int64_t> pool_size = ShapeToInt(attrs->pool_size);
+    std::vector<int64_t> strides = ShapeToInt(attrs->strides);
+    std::vector<int64_t> padding = ShapeToInt(attrs->padding);
+    std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
+    std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
+    std::vector<int64_t> dilation = ShapeToInt(attrs->dilation);
+    std::string data_layout = attrs->layout;
+    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+    std::string rounding_type = attrs->ceil_mode ? "ceil" : "floor";
+    bool exclude_pad = !(attrs->count_include_pad);
+
+    op avgpool{idx, op::kind::AvgPool, inputs, {output}, "avgpool" + std::to_string(idx)};
+    avgpool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    avgpool.set_attr<std::vector<int64_t>>("strides", strides);
+    avgpool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    avgpool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    avgpool.set_attr<std::string>("data_format", data_format);
+    avgpool.set_attr<std::string>("rounding_type", rounding_type);
+    avgpool.set_attr<bool>("exclude_pad", exclude_pad);
+    /// add the ops to the graph
+    g.add_op(avgpool);
+  }
+
 
   void GlobalAvgPool2d(const CallNode* call, PostDfsIndex idx, graph& g,
                  std::vector<logical_tensor> inputs, logical_tensor output) {

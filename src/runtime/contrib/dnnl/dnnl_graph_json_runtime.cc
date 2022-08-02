@@ -187,6 +187,14 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         GetOpInputs(op_inputs, pat_inputs, 2, is_first);
         GetOutput(nid, op_output, is_last);
         Convolution(nid, op_inputs, op_output, g);
+      } else if (op_name.find("maxpool") != std::string::npos) {
+        GetOpInputs(op_inputs, pat_inputs, 1, is_first);
+        GetOutput(nid, op_output, is_last);
+        MaxPool(nid, op_inputs, op_output, g);
+      } else if (op_name.find("avgpool") != std::string::npos) {
+        GetOpInputs(op_inputs, pat_inputs, 1, is_first);
+        GetOutput(nid, op_output, is_last);
+        AvgPool(nid, op_inputs, op_output, g);
       } else if (op_name.find("nn.bias") != std::string::npos) {
         GetOpInputs(op_inputs, pat_inputs, 2, is_first);
         GetOutput(nid, op_output, is_last);
@@ -326,6 +334,130 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
 
     /// add the ops to the graph
     g.add_op(conv);
+  }
+
+  void MaxPool(const size_t& nid, std::vector<logical_tensor>& inputs, logical_tensor& output,
+                   graph& g) {
+    auto node = nodes_[nid];
+
+    // Setup attributes.
+    auto pool_size = GetNodeAttr<std::vector<int64_t>>(node, "pool_size");
+    auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
+    auto dilates = GetNodeAttr<std::vector<int64_t>>(node, "dilation");
+    auto padding = GetNodeAttr<std::vector<int64_t>>(node, "padding");
+    std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
+    std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
+
+    std::string data_layout = node.GetAttr<std::vector<std::string>>("layout")[0];
+    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+    std::string rounding_type = GetNodeAttr<bool>(node, "ceil_mode") ? "ceil" : "floor";
+
+    /// create op conv
+    std::cout << "maxpool" + std::to_string(graph_op_idx_) << std::endl;
+    op maxpool{graph_op_idx_,
+               op::kind::MaxPool,
+               inputs,
+               {output},
+               "maxpool" + std::to_string(graph_op_idx_)};
+    maxpool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    maxpool.set_attr<std::vector<int64_t>>("strides", strides);
+    maxpool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    maxpool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    maxpool.set_attr<std::vector<int64_t>>("dilations", dilates);
+    maxpool.set_attr<std::string>("data_format", data_format);
+    maxpool.set_attr<std::string>("rounding_type", rounding_type);
+    std::cout << "strides: ";
+    for (auto i : strides) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_l: ";
+    for (auto i : padding_l) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_r: ";
+    for (auto i : padding_r) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "dilates: ";
+    for (auto i : dilates) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "data_format: " << data_format << std::endl;
+    std::cout << "rounding_type: " << rounding_type << std::endl;
+
+    /// add the ops to the graph
+    g.add_op(maxpool);
+  }
+
+  void AvgPool(const size_t& nid, std::vector<logical_tensor>& inputs, logical_tensor& output,
+                   graph& g) {
+    auto node = nodes_[nid];
+
+    // Setup attributes.
+    auto pool_size = GetNodeAttr<std::vector<int64_t>>(node, "pool_size");
+    auto strides = GetNodeAttr<std::vector<int64_t>>(node, "strides");
+    auto dilates = GetNodeAttr<std::vector<int64_t>>(node, "dilation");
+    auto padding = GetNodeAttr<std::vector<int64_t>>(node, "padding");
+    std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
+    std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
+
+    std::string data_layout = node.GetAttr<std::vector<std::string>>("layout")[0];
+    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+    std::string rounding_type = GetNodeAttr<bool>(node, "ceil_mode") ? "ceil" : "floor";
+    bool exclude_pad =!(GetNodeAttr<bool>(node, "count_include_pad"));
+
+    /// create op conv
+    std::cout << "avgpool" + std::to_string(graph_op_idx_) << std::endl;
+    op avgpool{graph_op_idx_,
+               op::kind::AvgPool,
+               inputs,
+               {output},
+               "avgpool" + std::to_string(graph_op_idx_)};
+    avgpool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    avgpool.set_attr<std::vector<int64_t>>("strides", strides);
+    avgpool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    avgpool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    avgpool.set_attr<std::string>("data_format", data_format);
+    avgpool.set_attr<std::string>("rounding_type", rounding_type);
+    avgpool.set_attr<bool>("exclude_pad", exclude_pad);
+    std::cout << "strides: ";
+    for (auto i : strides) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_l: ";
+    for (auto i : padding_l) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_r: ";
+    for (auto i : padding_r) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "dilates: ";
+    for (auto i : dilates) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "data_format: " << data_format << std::endl;
+    std::cout << "rounding_type: " << rounding_type << std::endl;
+    std::cout << "exclude_pad: " << exclude_pad << std::endl;
+
+    /// add the ops to the graph
+    g.add_op(avgpool);
   }
 
   void Compile(graph& g) {

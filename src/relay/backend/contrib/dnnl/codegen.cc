@@ -473,6 +473,8 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       {"sigmoid", "sigmoid"},
       {"nn.deconv2d", "nn.conv2d_transpose"},
       {"nn.deconv3d", "nn.conv3d_transpose"},
+      {"nn.maxpool2d", "nn.max_pool2d"},
+      {"nn.avgpool2d", "nn.avg_pool2d"},
   };
 
   std::vector<std::string> ParsingOpList(const std::string& pattern_name,
@@ -485,14 +487,8 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       std::string op_name = pattern_name.substr(start, pos - start);
       if (op_name.find("dnnl") != std::string::npos) {
         op_name.replace(op_name.find("dnnl"), 4, "nn");
-        if (op_name.find("deconv") != std::string::npos) {
-          op_name = op_map[op_name];
-        } else if (op_name == "nn.bias") {
-          op_name = op_map[op_name];
-        }
-      } else {
-        op_name = op_map[op_name];
-      }
+      } 
+      op_name = op_map.count(op_name) ? op_map[op_name] : op_name;
       if (pos > start) op_list.push_back(op_name);
       start = pos + interval.size();
     }
