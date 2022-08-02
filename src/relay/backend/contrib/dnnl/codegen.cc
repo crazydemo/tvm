@@ -475,6 +475,8 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       {"nn.deconv3d", "nn.conv3d_transpose"},
       {"nn.maxpool2d", "nn.max_pool2d"},
       {"nn.avgpool2d", "nn.avg_pool2d"},
+      {"nn.gmp", "nn.global_max_pool2d"},
+      {"nn.gap", "nn.global_avg_pool2d"},
   };
 
   std::vector<std::string> ParsingOpList(const std::string& pattern_name,

@@ -440,6 +440,17 @@ def test_invalid_graph_pattern(run_module, dtype="float32"):
     run_and_verify_func(get_graph(), run_module=run_module, dtype=dtype)
 
 
+def test_global_pool(run_module, dtype="float32"):
+    def get_graph(op):
+        x = relay.var("x", shape=(1, 3, 56, 56), dtype=dtype)
+        out = op(x)
+        f = tvm.IRModule.from_expr(out)
+        return f, {"x": (1, 3, 56, 56)}, []
+
+    run_and_verify_func(get_graph(relay.nn.global_avg_pool2d), run_module=run_module, dtype=dtype)
+    run_and_verify_func(get_graph(relay.nn.global_max_pool2d), run_module=run_module, dtype=dtype)
+
+
 def test_pool2d(run_module, dtype="float32"):
     def get_graph(
         op,
@@ -639,7 +650,8 @@ if __name__ == "__main__":
     # test_conv2d_pattern(True)
     # test_conv2d_bias_sum_relu(True)
     # test_invalid_graph_pattern(True)
-    test_pool2d(True)
+    # test_pool2d(True)
+    test_global_pool(True)
     # test_resnetv1_rewrite(True)
     # test_dense(True)
     # test_dense_pattern(True)

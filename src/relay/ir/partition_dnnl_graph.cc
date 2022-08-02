@@ -53,7 +53,7 @@ class DNNLPatternPartitioner : protected MixedModeMutator {
 
  std::map<std::string, std::string> op_map{
    {"nn.bias_add", "bias"}, {"nn.conv2d", "conv2d"}, {"add", "add"},
-    {"nn.relu", "relu"},     {"nn.dense", "dense"}, {"nn.max_pool2d", "maxpool2d"}, {"nn.avg_pool2d", "avgpool2d"},
+    {"nn.relu", "relu"},     {"nn.dense", "dense"}, {"nn.max_pool2d", "maxpool2d"}, {"nn.avg_pool2d", "avgpool2d"}, {"nn.global_avg_pool2d", "gap"}, {"nn.global_max_pool2d", "gmp"},
  };
 
 public:
@@ -110,8 +110,12 @@ public:
      } else if (IsOp(call, "nn.avg_pool2d")) {
        const auto* attr = call->attrs.as<AvgPool2DAttrs>();
        AvgPool(attr, op_idx, dnnl_graph, inputs, output);
-    //  } else if (IsOp(call, "nn.global_avg_pool2d")) {
-    //    GlobalAvgPool2d(call, op_idx, dnnl_graph, inputs, output);
+     } else if (IsOp(call, "nn.global_avg_pool2d")) {
+       const auto* attr = call->attrs.as<GlobalPool2DAttrs>();
+       GlobalPool(attr, op_idx, dnnl_graph, inputs, output, "avg");
+    } else if (IsOp(call, "nn.global_max_pool2d")) {
+       const auto* attr = call->attrs.as<GlobalPool2DAttrs>();
+       GlobalPool(attr, op_idx, dnnl_graph, inputs, output, "max");
      } else if (IsOp(call, "nn.bias_add")) {
        op bias_add{
            op_idx, op::kind::BiasAdd, inputs, {output}, "bias_add" + std::to_string(op_idx)};
@@ -271,35 +275,39 @@ public:
     g.add_op(avgpool);
   }
 
-
-  void GlobalAvgPool2d(const CallNode* call, PostDfsIndex idx, graph& g,
-                 std::vector<logical_tensor> inputs, logical_tensor output) {
-    const auto* attr = call->attrs.as<GlobalPool2DAttrs>();
-    ICHECK(attr);
+  template <typename ATTRS>
+  void GlobalPool(const ATTRS* attrs, PostDfsIndex idx, graph& g, std::vector<logical_tensor> inputs,
+              logical_tensor output, const std::string& pool_alg) {
+    ICHECK(attrs);
+    std::string data_layout = attrs->layout;
+    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
 
     std::vector<int64_t> pool_size;
-    for (size_t i = 2; i <inputs[0].get_dims().size(); ++i) {
+    size_t start_idx = data_format == "NCX" ? 2 : 1;
+    size_t end_idx = data_format == "NCX" ? inputs[0].get_dims().size() : inputs[0].get_dims().size() - 1;
+    for (size_t i = start_idx; i < end_idx; ++i) {
       pool_size.push_back(inputs[0].get_dims()[i]);
       std::cout << "dim: " << inputs[0].get_dims()[i] << std::endl;
     }
-    std::string data_layout = attr->layout;
-    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
-    std::vector<int64_t> strides = std::vector<int64_t>(inputs[0].get_dims().size() - 2, 1);
-    std::vector<int64_t> padding = std::vector<int64_t>((inputs[0].get_dims().size() - 2) * 2, 0);
+
+    // std::vector<int64_t> pool_size = ShapeToInt(attrs->pool_size);
+    std::vector<int64_t> strides = std::vector<int64_t>(pool_size.size(), 1);
+    std::vector<int64_t> padding = std::vector<int64_t>(pool_size.size() * 2, 0);
     std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
     std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
-    std::vector<int64_t> dilation = std::vector<int64_t>(inputs[0].get_dims().size() - 2, 1);
+    std::vector<int64_t> dilation = std::vector<int64_t>(pool_size.size(), 1);
+    // bool exclude_pad = !(attrs->count_include_pad);
 
-    op pool{idx, op::kind::AvgPool, inputs, {output}, "global_avgpool" + std::to_string(idx)};
-    pool.set_attr<std::vector<int64_t>>("kernel", pool_size);
-    pool.set_attr<std::vector<int64_t>>("strides", strides);
-    pool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
-    pool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
-    pool.set_attr<std::vector<int64_t>>("dilations", dilation);
-    pool.set_attr<std::string>("data_format", data_format);
+    op globalpool{idx, pool_alg == "avg" ? op::kind::AvgPool : op::kind::MaxPool, inputs, {output}, "globalpool" + std::to_string(idx)};
+    globalpool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    globalpool.set_attr<std::vector<int64_t>>("strides", strides);
+    globalpool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    globalpool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    globalpool.set_attr<std::string>("data_format", data_format);
+    if (pool_alg == "avg") globalpool.set_attr<bool>("exclude_pad", true);
 
     /// add the ops to the graph
-    g.add_op(pool);
+    g.add_op(globalpool);
   }
 
   /*!

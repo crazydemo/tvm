@@ -118,6 +118,8 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       {"sigmoid", "sigmoid"},
       {"nn.deconv2d", "nn.conv2d_transpose"},
       {"nn.deconv3d", "nn.conv3d_transpose"},
+      {"nn.gmp", "nn.global_max_pool"},
+      {"nn.gap", "nn.global_avg_pool"},
   };
 
   std::vector<std::string> ParsingOpList(const std::string& pattern_name,
@@ -131,12 +133,8 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
       std::cout << "parsing list op_name: " << op_name << std::endl;
       if (op_name.find("dnnl") != std::string::npos) {
         op_name.replace(op_name.find("dnnl"), 4, "nn");
-        if (op_name.find("deconv") != std::string::npos) {
-          op_name = op_map.count(op_name) ? op_map[op_name] : "_";
-        }
-      } else {
-        op_name = op_map.count(op_name) ? op_map[op_name] : "_";
-      }
+      } 
+      op_name = op_map.count(op_name) ? op_map[op_name] : op_name;
       if (pos > start) op_list.push_back(op_name);
       start = pos + interval.size();
     }
@@ -195,6 +193,10 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
         GetOpInputs(op_inputs, pat_inputs, 1, is_first);
         GetOutput(nid, op_output, is_last);
         AvgPool(nid, op_inputs, op_output, g);
+      } else if (op_name == "nn.global_max_pool" || op_name == "nn.global_avg_pool") {
+        GetOpInputs(op_inputs, pat_inputs, 1, is_first);
+        GetOutput(nid, op_output, is_last);
+        GlobalPool(nid, op_inputs, op_output, g);
       } else if (op_name.find("nn.bias") != std::string::npos) {
         GetOpInputs(op_inputs, pat_inputs, 2, is_first);
         GetOutput(nid, op_output, is_last);
@@ -458,6 +460,97 @@ class DNNLGraphJSONRuntime : public JSONRuntimeBase {
 
     /// add the ops to the graph
     g.add_op(avgpool);
+  }
+
+  void GlobalPool(const size_t& nid, std::vector<logical_tensor>& inputs, logical_tensor& output,
+                   graph& g) {
+    auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+    std::cout << "op_name: " << op_name << std::endl;
+    bool is_global = op_name.find("gap") != std::string::npos || op_name.find("gmp") != std::string::npos;
+    std::vector<int64_t> shape =
+        nodes_[node.GetInputs()[0].id_].GetOpShape()[node.GetInputs()[0].index_];
+
+    std::cout << "shape: ";
+    for (auto i : shape) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    ICHECK(shape.size() > 2);
+
+    std::string data_layout = node.GetAttr<std::vector<std::string>>("layout")[0];
+    std::string data_format = regex_replace(data_layout, regex("(D?)(H?)W"), "X");
+    std::vector<int64_t> pool_size;
+    size_t start_idx = data_format == "NCX" ? 2 : 1;
+    size_t end_idx = data_format == "NCX" ? shape.size() : shape.size() - 1;
+    for (size_t i = start_idx; i < end_idx; ++i) {
+      pool_size.push_back(shape[i]);
+      std::cout << "dim: " << shape[i] << std::endl;
+    }
+
+    // Setup attributes.
+    auto strides = is_global ? std::vector<int64_t>(pool_size.size(), 1)
+                             : GetNodeAttr<std::vector<int64_t>>(node, "strides");
+    auto dilates = is_global ? std::vector<int64_t>(pool_size.size(), 1)
+                             : GetNodeAttr<std::vector<int64_t>>(node, "dilation");
+    auto padding = is_global ? std::vector<int64_t>(pool_size.size() * 2, 0)
+                             : GetNodeAttr<std::vector<int64_t>>(node, "padding");
+    std::vector<int64_t> padding_l(padding.begin(), padding.begin() + padding.size() / 2);
+    std::vector<int64_t> padding_r(padding.begin() + padding.size() / 2, padding.end());
+
+    /// create op conv
+    std::cout << "globalpool" + std::to_string(graph_op_idx_) << std::endl;
+    op globalpool{graph_op_idx_,
+               op_name.find("gap") != std::string::npos ? op::kind::AvgPool : op::kind::MaxPool,
+               inputs,
+               {output},
+               "globalpool" + std::to_string(graph_op_idx_)};
+    globalpool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    globalpool.set_attr<std::vector<int64_t>>("strides", strides);
+    globalpool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    globalpool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    globalpool.set_attr<std::string>("data_format", data_format);
+    if (op_name.find("gap") != std::string::npos) globalpool.set_attr<bool>("exclude_pad", true);
+    // avgpool.set_attr<bool>("exclude_pad", false);
+
+    // op pool{idx, op::kind::AvgPool, inputs, {output}, "global_avgpool" + std::to_string(idx)};
+    // pool.set_attr<std::vector<int64_t>>("kernel", pool_size);
+    // pool.set_attr<std::vector<int64_t>>("strides", strides);
+    // pool.set_attr<std::vector<int64_t>>("pads_begin", padding_l);
+    // pool.set_attr<std::vector<int64_t>>("pads_end", padding_r);
+    // pool.set_attr<std::vector<int64_t>>("dilations", dilation);
+    // pool.set_attr<std::string>("data_format", data_format);
+
+    std::cout << "strides: ";
+    for (auto i : strides) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_l: ";
+    for (auto i : padding_l) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "padding_r: ";
+    for (auto i : padding_r) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "dilates: ";
+    for (auto i : dilates) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "data_format: " << data_format << std::endl;
+    // std::cout << "rounding_type: " << rounding_type << std::endl;
+
+    /// add the ops to the graph
+    g.add_op(globalpool);
   }
 
   void Compile(graph& g) {
